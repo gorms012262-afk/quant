@@ -20,7 +20,7 @@ div[data-testid="stExpander"] { background-color:#131722!important; border:1px s
 div[data-testid="stExpander"] summary p { color:#E2E8F0!important; font-size:0.82rem!important; font-weight:600!important; }
 div[data-baseweb="input"]>div, div[data-baseweb="select"]>div { background-color:#F8FAFC!important; color:#0B0E14!important; border-radius:8px!important; }
 div[data-baseweb="input"] input { color:#0B0E14!important; font-weight:600!important; }
-label p, .stRadio label p { color:#E2E8F0!important; font-size:0.82rem!important; }
+label p, .stRadio label p, button[data-baseweb="tab"] p { color:#E2E8F0!important; font-size:0.82rem!important; }
 .stButton>button { background-color:#1E293B!important; color:#F8FAFC!important; border:1px solid #334155!important; border-radius:8px!important; }
 </style>""", unsafe_allow_html=True)
 
@@ -38,6 +38,7 @@ def load_data(symbol, tf, strat_filter):
     if df.empty: return None
     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
     df = df.dropna().copy()
+    if len(df) < 5: return None
     if df.index.tz is None: df.index = df.index.tz_localize('UTC')
     df_ny = df.tz_convert('America/New_York')
     df['Date_NY'], df['Time_NY'] = df_ny.index.date, df_ny.index.strftime('%H:%M')
@@ -100,71 +101,86 @@ def load_data(symbol, tf, strat_filter):
             if rs: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rs)
     return df
 
-df = load_data(ticker, timeframe, strategy_filter)
-if df is None or len(df) < 5:
-    st.error(f"❌ '{ticker}' 종목 데이터를 불러올 수 없습니다.")
-    st.stop()
+tab1, tab2 = st.tabs(["📊 종목 차트 분석", "📡 관심 종목 스캐너"])
 
-wins, losses = 0, 0
-buy_indices = np.where(df['Buy_Signal'])[0]
-for bi in buy_indices:
-    if bi + 1 >= len(df): continue
-    entry = df['Close'].iloc[bi]
-    future = df.iloc[bi+1 : min(bi+8, len(df))]
-    hit_tp = (future['High'] >= entry * 1.015).any()
-    hit_sl = (future['Low'] <= entry * 0.990).any()
-    if hit_tp and not hit_sl: wins += 1
-    elif hit_sl and not hit_tp: losses += 1
-    elif future['Close'].iloc[-1] > entry: wins += 1
-    else: losses += 1
-total_trades = wins + losses
-win_rate = (wins / total_trades * 100) if total_trades > 0 else 0.0
+with tab1:
+    df = load_data(ticker, timeframe, strategy_filter)
+    if df is None:
+        st.error(f"❌ '{ticker}' 종목 데이터를 불러올 수 없습니다.")
+        st.stop()
 
-latest, prev_bar = df.iloc[-1], df.iloc[-2]
-p_diff = latest['Close'] - prev_bar['Close']
-p_pct = (p_diff / prev_bar['Close']) * 100
-b_df, s_df = df[df['Buy_Signal']], df[df['Sell_Signal']]
-lb_str = b_df.index[-1].tz_convert('America/New_York').strftime('%m-%d %H:%M') if not b_df.empty else "없음"
-lb_rsn = b_df.iloc[-1]['Signal_Reason'] if not b_df.empty else "-"
-ls_str = s_df.index[-1].tz_convert('America/New_York').strftime('%m-%d %H:%M') if not s_df.empty else "없음"
+    wins, losses = 0, 0
+    for bi in np.where(df['Buy_Signal']):
+        if bi + 1 >= len(df): continue
+        entry = df['Close'].iloc[bi]
+        future = df.iloc[bi+1 : min(bi+8, len(df))]
+        hit_tp, hit_sl = (future['High'] >= entry * 1.015).any(), (future['Low'] <= entry * 0.990).any()
+        if hit_tp and not hit_sl: wins += 1
+        elif hit_sl and not hit_tp: losses += 1
+        elif future['Close'].iloc[-1] > entry: wins += 1
+        else: losses += 1
+    total_trades = wins + losses
+    win_rate = (wins / total_trades * 100) if total_trades > 0 else 0.0
 
-if latest['Buy_Signal']: st_html = f'<span class="badge-buy">🟢 {latest["Signal_Reason"]}</span>'
-elif latest['Sell_Signal']: st_html = f'<span class="badge-sell">🔴 {latest["Signal_Reason"]}</span>'
-elif latest['Close'] > latest['VWAP']: st_html = '<span class="badge-buy">📈 VWAP 상단</span>'
-else: st_html = '<span class="badge-neutral">⏳ VWAP 하단</span>'
+    latest, prev_bar = df.iloc[-1], df.iloc[-2]
+    p_diff = latest['Close'] - prev_bar['Close']
+    p_pct = (p_diff / prev_bar['Close']) * 100
+    b_df, s_df = df[df['Buy_Signal']], df[df['Sell_Signal']]
+    lb_str = b_df.index[-1].tz_convert('America/New_York').strftime('%m-%d %H:%M') if not b_df.empty else "없음"
+    lb_rsn = b_df.iloc[-1]['Signal_Reason'] if not b_df.empty else "-"
 
-cp = "#EF4444" if p_diff >= 0 else "#3B82F6"
-sgn = "+" if p_diff >= 0 else ""
-rv = latest['RSI']
-rc = "#EF4444" if rv >= 70 else ("#10B981" if rv <= 30 else "#F8FAFC")
+    if latest['Buy_Signal']: st_html = f'<span class="badge-buy">🟢 {latest["Signal_Reason"]}</span>'
+    elif latest['Sell_Signal']: st_html = f'<span class="badge-sell">🔴 {latest["Signal_Reason"]}</span>'
+    elif latest['Close'] > latest['VWAP']: st_html = '<span class="badge-buy">📈 VWAP 상단</span>'
+    else: st_html = '<span class="badge-neutral">⏳ VWAP 하단</span>'
 
-st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-title">{ticker} ({timeframe})</div><div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.75rem;color:{cp};">({sgn}{p_pct:.2f}%)</span></div></div><div class="metric-card"><div class="metric-title">현재 추세 판정</div><div style="margin-top:2px;">{st_html}</div></div><div class="metric-card"><div class="metric-title">최근 매수 ({lb_str})</div><div class="metric-value" style="font-size:0.88rem;color:#10B981;">{lb_rsn}</div></div><div class="metric-card"><div class="metric-title">백테스트 승률 ({total_trades}회) / RSI</div><div class="metric-value" style="color:{rc};">{win_rate:.1f}% <span style="font-size:0.78rem;color:#94A3B8;">(RSI {rv:.1f})</span></div></div></div>', unsafe_allow_html=True)
+    cp, sgn = ("#EF4444" if p_diff >= 0 else "#3B82F6"), ("+" if p_diff >= 0 else "")
+    rv = latest['RSI']
+    rc = "#EF4444" if rv >= 70 else ("#10B981" if rv <= 30 else "#F8FAFC")
 
-st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-title">{ticker} ({timeframe})</div><div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.75rem;color:{cp};">({sgn}{p_pct:.2f}%)</span></div></div><div class="metric-card"><div class="metric-title">현재 추세 판정</div><div style="margin-top:2px;">{st_html}</div></div><div class="metric-card"><div class="metric-title">최근 매수 ({lb_str})</div><div class="metric-value" style="font-size:0.88rem;color:#10B981;">{lb_rsn}</div></div><div class="metric-card"><div class="metric-title">백테스트 승률 ({total_trades}회) / RSI</div><div class="metric-value" style="color:{rc};">{win_rate:.1f}% <span style="font-size:0.78rem;color:#94A3B8;">(RSI {rv:.1f})</span></div></div></div>', unsafe_allow_html=True)
 
-pdf = df.tail(45).copy()
-pdf.index = pdf.index.tz_convert('America/New_York')
-mc = mpf.make_marketcolors(up='#EF4444', down='#3B82F6', edge='inherit', wick='inherit', volume={'up':'#EF4444', 'down':'#3B82F6'})
-style = mpf.make_mpf_style(base_mpf_style='nightclouds', marketcolors=mc, facecolor='#0B0E14', figcolor='#131722', gridcolor='#1E293B', gridstyle='-', y_on_right=True)
-apds = [mpf.make_addplot(pdf['EMA20'], color='#38BDF8', width=1.1), mpf.make_addplot(pdf['EMA50'], color='#F59E0B', width=1.1), mpf.make_addplot(pdf['VWAP'], color='#10B981', width=1.2, linestyle='--'), mpf.make_addplot(pdf['RSI'], panel=2, color='#818CF8', width=1.2, ylabel='RSI')]
-buy_y = np.where(pdf['Buy_Signal'], pdf['Low'] * 0.996, np.nan)
-sell_y = np.where(pdf['Sell_Signal'], pdf['High'] * 1.004, np.nan)
-if not np.all(np.isnan(buy_y)): apds.append(mpf.make_addplot(buy_y, type='scatter', markersize=65, marker='^', color='#10B981'))
-if not np.all(np.isnan(sell_y)): apds.append(mpf.make_addplot(sell_y, type='scatter', markersize=65, marker='v', color='#EF4444'))
-buf = io.BytesIO()
-mpf.plot(pdf, type='candle', style=style, addplot=apds, volume=True, panel_ratios=(5, 1.5, 2), figsize=(8, 7.5), tight_layout=True, savefig=dict(fname=buf, dpi=180, bbox_inches='tight', facecolor='#131722'))
-buf.seek(0)
-st.image(buf, use_container_width=True)
-plt.close('all')
+    st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-sig_df = df[df['Buy_Signal'] | df['Sell_Signal']].tail(10).iloc[::-1].copy()
-if not sig_df.empty:
-    sig_ny = sig_df.index.tz_convert('America/New_York')
-    hist_df = pd.DataFrame({
-        "시간(NY)": sig_ny.strftime('%Y-%m-%d %H:%M') if timeframe != "일봉" else sig_ny.strftime('%Y-%m-%d'),
-        "구분": np.where(sig_df['Buy_Signal'], "🟢 매수", "🔴 매도"),
-        "전략명": sig_df['Signal_Reason'],
-        "체결가": sig_df['Close'].map('${:,.2f}'.format)
-    })
-    st.markdown("<div style='font-size:0.82rem;font-weight:700;color:#E2E8F0;margin:10px 0 4px 2px;'>📋 최근 매매 신호 이력 (최대 10건)</div>", unsafe_allow_html=True)
-    st.dataframe(hist_df, use_container_width=True, hide_index=True)
+    pdf = df.tail(45).copy()
+    pdf.index = pdf.index.tz_convert('America/New_York')
+    mc = mpf.make_marketcolors(up='#EF4444', down='#3B82F6', edge='inherit', wick='inherit', volume={'up':'#EF4444', 'down':'#3B82F6'})
+    style = mpf.make_mpf_style(base_mpf_style='nightclouds', marketcolors=mc, facecolor='#0B0E14', figcolor='#131722', gridcolor='#1E293B', gridstyle='-', y_on_right=True)
+    apds = [mpf.make_addplot(pdf['EMA20'], color='#38BDF8', width=1.1), mpf.make_addplot(pdf['EMA50'], color='#F59E0B', width=1.1), mpf.make_addplot(pdf['VWAP'], color='#10B981', width=1.2, linestyle='--'), mpf.make_addplot(pdf['RSI'], panel=2, color='#818CF8', width=1.2, ylabel='RSI')]
+    buy_y, sell_y = np.where(pdf['Buy_Signal'], pdf['Low'] * 0.996, np.nan), np.where(pdf['Sell_Signal'], pdf['High'] * 1.004, np.nan)
+    if not np.all(np.isnan(buy_y)): apds.append(mpf.make_addplot(buy_y, type='scatter', markersize=65, marker='^', color='#10B981'))
+    if not np.all(np.isnan(sell_y)): apds.append(mpf.make_addplot(sell_y, type='scatter', markersize=65, marker='v', color='#EF4444'))
+    buf = io.BytesIO()
+    mpf.plot(pdf, type='candle', style=style, addplot=apds, volume=True, panel_ratios=(5, 1.5, 2), figsize=(8, 7.5), tight_layout=True, savefig=dict(fname=buf, dpi=180, bbox_inches='tight', facecolor='#131722'))
+    buf.seek(0)
+    st.image(buf, use_container_width=True)
+    plt.close('all')
+
+    sig_df = df[df['Buy_Signal'] | df['Sell_Signal']].tail(10).iloc[::-1].copy()
+    if not sig_df.empty:
+        sig_ny = sig_df.index.tz_convert('America/New_York')
+        hist_df = pd.DataFrame({
+            "시간(NY)": sig_ny.strftime('%m-%d %H:%M') if timeframe != "일봉" else sig_ny.strftime('%Y-%m-%d'),
+            "구분": np.where(sig_df['Buy_Signal'], "🟢 매수", "🔴 매도"),
+            "전략명": sig_df['Signal_Reason'],
+            "진입가": sig_df['Close'].map('${:,.2f}'.format),
+            "목표가(+1.5%)": np.where(sig_df['Buy_Signal'], (sig_df['Close']*1.015).map('${:,.2f}'.format), "-"),
+            "손절가(-1.0%)": np.where(sig_df['Buy_Signal'], (sig_df['Close']*0.990).map('${:,.2f}'.format), "-")
+        })
+        st.markdown("<div style='font-size:0.82rem;font-weight:700;color:#E2E8F0;margin:10px 0 4px 2px;'>📋 최근 매매 신호 및 손절/익절 가이드</div>", unsafe_allow_html=True)
+        st.dataframe(hist_df, use_container_width=True, hide_index=True)
+
+with tab2:
+    watch_input = st.text_input("관심 종목 목록 (쉼표로 구분)", value="QQQ, NVDA, TSLA, AAPL, MSFT, AMD, META, AMZN")
+    if st.button("🔍 전체 종목 실시간 신호 스캔", use_container_width=True):
+        symbols = [s.strip().upper() for s in watch_input.split(",") if s.strip()]
+        scan_rows = []
+        with st.spinner("종목 데이터를 분석 중입니다..."):
+            for sym in symbols:
+                sdf = load_data(sym, timeframe, strategy_filter)
+                if sdf is None: continue
+                lr = sdf.iloc[-1]
+                recent_sig = sdf[sdf['Buy_Signal'] | sdf['Sell_Signal']]
+                last_dt = recent_sig.index[-1].tz_convert('America/New_York').strftime('%m-%d %H:%M') if not recent_sig.empty else "-"
+                last_rsn = recent_sig.iloc[-1]['Signal_Reason'] if not recent_sig.empty else "신호없음"
+                is_b = recent_sig.iloc[-1]['Buy_Signal'] if not recent_sig.empty else False
