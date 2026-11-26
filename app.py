@@ -45,7 +45,6 @@ def load_data(symbol, tf):
     df_ny = df.tz_convert('America/New_York')
     df['Date_NY'], df['Time_NY'] = df_ny.index.date, df_ny.index.strftime('%H:%M')
 
-    # 토스증권 스타일 이동평균선 (5, 20, 60, 120) + 전략용 EMA
     df['MA5'] = df['Close'].rolling(5).mean()
     df['MA20'] = df['Close'].rolling(20).mean()
     df['MA60'] = df['Close'].rolling(60).mean()
@@ -54,20 +53,17 @@ def load_data(symbol, tf):
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
     df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
 
-    # RSI (14)
     d = df['Close'].diff()
     g = d.where(d > 0, 0).rolling(14).mean()
     l = (-d.where(d < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + g / l.replace(0, np.nan)))
 
-    # MACD (12, 26, 9)
     ema12 = df['Close'].ewm(span=12, adjust=False).mean()
     ema26 = df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD'] = ema12 - ema26
     df['MACD_Sig'] = df['MACD'].ewm(span=9, adjust=False).mean()
     df['MACD_Hist'] = df['MACD'] - df['MACD_Sig']
 
-    # 거래량 및 VWAP
     df['Vol_MA20'] = df['Volume'].rolling(20).mean()
     tp = (df['High'] + df['Low'] + df['Close']) / 3
     df['TP_Vol'] = tp * df['Volume']
@@ -131,7 +127,9 @@ st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-
 
 st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-# 토스증권 스타일 상단 이평선 범례 표시
-st.markdown('<div style="display:flex;gap:10px;font-size:0.68rem;padding:2px 4px;color:#94A3B8;"><span>이평선</span><span style="color:#10B981;">● 5</span><span style="color:#EF4444;">● 20</span><span style="color:#F59E0B;">● 60</span><span style="color:#A855F7;">● 120</span><span style="color:#2DD4BF;">■ 매물대</span></div>', unsafe_allow_html=True)
+st.markdown('<div style="display:flex;gap:10px;font-size:0.7rem;padding:2px 4px;color:#94A3B8;"><span>이평선</span><span style="color:#10B981;">● 5</span><span style="color:#EF4444;">● 20</span><span style="color:#F59E0B;">● 60</span><span style="color:#A855F7;">● 120</span></div>', unsafe_allow_html=True)
 
-pdf = df.tail(60).copy()
+pdf = df.tail(55).copy()
+fmt = '%m/%d' if timeframe == "일봉" else '%d일 %H:%M'
+pdf['DateStr'] = pdf.index.strftime(fmt)
+pdf['Idx'] = range(len(pdf))
