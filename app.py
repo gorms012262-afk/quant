@@ -16,6 +16,9 @@ header[data-testid="stHeader"] { background-color:#0B0E14; }
 .ohlc-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; background-color:#131722; border:1px solid #1E293B; border-radius:8px; padding:7px 6px; margin-bottom:8px; text-align:center; }
 .ohlc-lbl { font-size:0.68rem; color:#64748B; margin-bottom:1px; }
 .ohlc-val { font-size:0.82rem; font-weight:700; color:#F8FAFC; }
+.list-card { background-color:#131722; border:1px solid #1E293B; border-radius:8px; padding:9px 11px; margin-bottom:6px; }
+.list-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+.list-sub { font-size:0.75rem; color:#94A3B8; display:flex; justify-content:space-between; }
 div[data-testid="stExpander"], div[data-testid="stExpander"] details, div[data-testid="stExpander"] summary { background-color:#131722!important; color:#F8FAFC!important; border-radius:8px!important; }
 div[data-testid="stExpander"] { border:1px solid #1E293B!important; }
 div[data-testid="stExpander"] summary p, div[data-testid="stExpander"] summary svg { color:#F8FAFC!important; fill:#F8FAFC!important; font-size:0.82rem!important; font-weight:600!important; }
@@ -32,9 +35,13 @@ with st.expander("⚙️ 종목 / 봉 기준 / 전략 설정 (눌러서 열기)"
     if st.button("🔄 데이터 새로고침", use_container_width=True):
         st.cache_data.clear()
 
-def analyze_df(raw_df, tf, strat_filter):
-    if raw_df is None or raw_df.empty: return None
-    df = raw_df.dropna().copy()
+@st.cache_data(ttl=60)
+def load_single(symbol, tf, strat_filter):
+    p, iv = ("1mo", "30m") if tf == "30분봉" else (("3mo", "1h") if tf == "1시간봉" else ("2y", "1d"))
+    raw = yf.download(symbol, period=p, interval=iv, progress=False, auto_adjust=True)
+    if raw is None or raw.empty: return None
+    if isinstance(raw.columns, pd.MultiIndex): raw.columns = raw.columns.get_level_values(0)
+    df = raw.dropna().copy()
     if len(df) < 5: return None
     if df.index.tz is None: df.index = df.index.tz_localize('UTC')
     df_ny = df.tz_convert('America/New_York')
@@ -98,40 +105,6 @@ def analyze_df(raw_df, tf, strat_filter):
             if rs: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rs)
     return df
 
-@st.cache_data(ttl=60)
-def load_single(symbol, tf, strat_filter):
-    p, iv = ("1mo", "30m") if tf == "30분봉" else (("3mo", "1h") if tf == "1시간봉" else ("2y", "1d"))
-    raw = yf.download(symbol, period=p, interval=iv, progress=False, auto_adjust=True)
-    if isinstance(raw.columns, pd.MultiIndex): raw.columns = raw.columns.get_level_values(0)
-    return analyze_df(raw, tf, strat_filter)
-
-@st.cache_data(ttl=60)
-def load_batch(symbols_tuple, tf, strat_filter):
-    p, iv = ("1mo", "30m") if tf == "30분봉" else (("3mo", "1h") if tf == "1시간봉" else ("2y", "1d"))
-    syms = list(symbols_tuple)
-    if len(syms) == 1:
-        one = next(iter(syms))
-        res = load_single(one, tf, strat_filter)
-        return {one: res} if res is not None else {}
-    raw = yf.download(syms, period=p, interval=iv, group_by='ticker', threads=True, progress=False, auto_adjust=True)
-    out = {}
-    for sym in syms:
-        try:
-            sub = raw[sym] if sym in raw.columns.get_level_values(0) else None
-            adf = analyze_df(sub, tf, strat_filter)
-            if adf is not None: out[sym] = adf
-        except Exception:
-            continue
-    return out
-
-def render_html_table(headers, rows):
-    th_html = "".join([f"<th style='padding:7px 6px;border-bottom:1px solid #334155;color:#94A3B8;font-size:0.72rem;white-space:nowrap;'>{h}</th>" for h in headers])
-    tr_html = ""
-    for r in rows:
-        tds = "".join([f"<td style='padding:7px 6px;border-bottom:1px solid #1E293B;color:#F8FAFC;font-size:0.76rem;white-space:nowrap;'>{c}</td>" for c in r])
-        tr_html += f"<tr>{tds}</tr>"
-    return f"<div style='overflow-x:auto;background:#131722;border:1px solid #1E293B;border-radius:8px;margin-top:4px;'><table style='width:100%;border-collapse:collapse;text-align:center;'><thead><tr>{th_html}</tr></thead><tbody>{tr_html}</tbody></table></div>"
-
 tab1, tab2 = st.tabs(["📊 종목 차트 분석", "📡 관심 종목 스캐너"])
 
 with tab1:
@@ -156,7 +129,7 @@ with tab1:
     latest, prev_bar = df.iloc[-1], df.iloc[-2]
     p_diff = latest['Close'] - prev_bar['Close']
     p_pct = (p_diff / prev_bar['Close']) * 100
-    b_df, s_df = df[df['Buy_Signal']], df[df['Sell_Signal']]
+    b_df = df[df['Buy_Signal']]
     lb_str = b_df.index[-1].tz_convert('America/New_York').strftime('%m-%d %H:%M') if not b_df.empty else "없음"
     lb_rsn = b_df.iloc[-1]['Signal_Reason'] if not b_df.empty else "-"
 
@@ -187,4 +160,32 @@ with tab1:
     st.image(buf, use_container_width=True)
     plt.close('all')
 
-    sig_df = df[df['Buy_Signal'] | df['Sell_Signal']].tail(10).iloc[::-1].copy()
+    sig_df = df[df['Buy_Signal'] | df['Sell_Signal']].tail(8).iloc[::-1].copy()
+    st.markdown("<div style='font-size:0.85rem;font-weight:700;color:#F8FAFC;margin:12px 0 6px 2px;'>📋 최근 매매 신호 및 손절/익절 가이드</div>", unsafe_allow_html=True)
+    if not sig_df.empty:
+        sig_ny = sig_df.index.tz_convert('America/New_York')
+        for idx_dt, row in zip(sig_ny, sig_df.itertuples()):
+            t_str = idx_dt.strftime('%m-%d %H:%M') if timeframe != "일봉" else idx_dt.strftime('%Y-%m-%d')
+            badge = "<span class='badge-buy'>🟢 매수</span>" if row.Buy_Signal else "<span class='badge-sell'>🔴 매도</span>"
+            guide = f"목표 <b style='color:#EF4444;'>${row.Close*1.015:,.2f}</b> · 손절 <b style='color:#3B82F6;'>${row.Close*0.990:,.2f}</b>" if row.Buy_Signal else "청산/관망"
+            st.markdown(f"<div class='list-card'><div class='list-top'><div>{badge} <b style='font-size:0.82rem;color:#F8FAFC;margin-left:4px;'>{row.Signal_Reason}</b></div><div style='font-size:0.85rem;font-weight:700;color:#F8FAFC;'>${row.Close:,.2f}</div></div><div class='list-sub'><span>🕒 {t_str} (NY)</span><span>{guide}</span></div></div>", unsafe_allow_html=True)
+    else:
+        st.info("최근 구간에 발생한 매매 신호가 없습니다.")
+
+with tab2:
+    if 'watch_list' not in st.session_state:
+        st.session_state.watch_list = "SOXL, TQQQ, NVDL, TSLL, SQQQ"
+    c1, c2, c3 = st.columns(3)
+    if c1.button("🔥 3배 레버리지", use_container_width=True):
+        st.session_state.watch_list = "SOXL, TQQQ, NVDL, TSLL, SQQQ"
+    if c2.button("💻 빅테크 주도주", use_container_width=True):
+        st.session_state.watch_list = "NVDA, TSLA, AAPL, MSFT, META, AMZN"
+    if c3.button("📈 대표 지수 ETF", use_container_width=True):
+        st.session_state.watch_list = "QQQ, SPY, IWM, DIA"
+
+    watch_input = st.text_input("관심 종목 목록 (쉼표로 구분)", key="watch_list")
+    symbols = [s.strip().upper() for s in watch_input.split(",") if s.strip()]
+    if symbols:
+        scan_cards = []
+        for sym in symbols:
+            sdf = load_single(sym, timeframe, strategy_filter)
