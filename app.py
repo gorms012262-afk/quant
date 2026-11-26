@@ -43,7 +43,7 @@ def send_kakao(token, msg):
     except Exception as e:
         return False, str(e)
 @st.cache_data(ttl=60)
-def load_quant_data(sym, tf, s_filter, trend_on):
+def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
     tf_map = {
         "15분봉": ("1mo", "15m"),
         "30분봉": ("1mo", "30m"),
@@ -102,6 +102,8 @@ def load_quant_data(sym, tf, s_filter, trend_on):
     for i in range(2, len(df)):
         idx, r, pv, pv2 = df.index[i], df.iloc[i], df.iloc[i-1], df.iloc[i-2]
         rb, rs = list(), list()
+
+        # 매수(BUY) 조건
         if r['Close'] > r['VWAP'] and (pv['RSI'] <= rsi_buy_1 or pv2['RSI'] <= rsi_buy_2) and r['Close'] > r['Open']:
             rb.append("VWAP+RSI 눌림")
         if r['EMA20'] > r['EMA50'] and r['ST_Up'] and (r['Low'] <= r['EMA20']*1.003) and r['Close'] > r['Open']:
@@ -114,16 +116,19 @@ def load_quant_data(sym, tf, s_filter, trend_on):
         if r['Time_Loc'] > open_time and r['Close'] > oh and pv['Close'] <= oh and r['Volume'] > r['Vol_MA20']*vol_orb_b:
             rb.append("ORB 돌파")
 
-        if r['Close'] < r['VWAP'] and (pv['RSI'] >= rsi_sell_1 or pv2['RSI'] >= rsi_sell_2) and r['Close'] < r['Open']:
-            rs.append("VWAP 저항+RSI 과열")
-        if r['EMA20'] < r['EMA50'] and (r['High'] >= r['EMA20']*0.997) and r['Close'] < r['Open']:
-            rs.append("EMA 역배열 저항")
-        if r['Close'] < r['VWAP'] and r['MACD_Hist'] < 0 and pv['MACD_Hist'] >= 0:
-            rs.append("MACD+VWAP 하락반전")
-        if (pv['High'] >= pv['BB_Up'] or r['High'] >= r['BB_Up']) and r['Close'] < r['BB_Up'] and r['Close'] < r['Open'] and r['RSI'] > 55:
-            rs.append("볼린저 상단 이탈")
-        if r['Time_Loc'] > open_time and r['Close'] < ol and pv['Close'] >= ol and r['Volume'] > r['Vol_MA20']*vol_orb_s:
-            rs.append("ORB 하단 이탈")
+        # 매도(SELL) 조건 (V자 강반등 숏 함정 방지: EMA20 기울기 상승중이거나 ST_Up(슈퍼트렌드 상승전환)이면 숏 금지)
+        v_rebound_guard = (r['EMA20'] > pv['EMA20']) or bool(r['ST_Up']) or (r['Close'] > r['VWAP'])
+        if not long_only and not v_rebound_guard:
+            if r['Close'] < r['VWAP'] and (pv['RSI'] >= rsi_sell_1 or pv2['RSI'] >= rsi_sell_2) and r['Close'] < r['Open']:
+                rs.append("VWAP 저항+RSI 과열")
+            if r['EMA20'] < r['EMA50'] and (r['High'] >= r['EMA20']*0.997) and r['Close'] < r['Open']:
+                rs.append("EMA 역배열 저항")
+            if r['Close'] < r['VWAP'] and r['MACD_Hist'] < 0 and pv['MACD_Hist'] >= 0:
+                rs.append("MACD+VWAP 하락반전")
+            if (pv['High'] >= pv['BB_Up'] or r['High'] >= r['BB_Up']) and r['Close'] < r['BB_Up'] and r['Close'] < r['Open'] and r['RSI'] > 55:
+                rs.append("볼린저 상단 이탈")
+            if r['Time_Loc'] > open_time and r['Close'] < ol and pv['Close'] >= ol and r['Volume'] > r['Vol_MA20']*vol_orb_s:
+                rs.append("ORB 하단 이탈")
 
         if trend_on:
             if not (r['Close'] > r['EMA200'] and r['ADX'] >= adx_min and r['RSI'] < 68.0): rb = list()
@@ -144,28 +149,35 @@ def load_quant_data(sym, tf, s_filter, trend_on):
             if ms and not mb: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(ms)
     return df
 
-def run_bt(df_in, n_bars, tp_m, sl_m):
+def run_bt(df_in, n_bars, tp_m, sl_m, no_overlap=True):
     trades = list()
     c_arr, h_arr, l_arr, a_arr = df_in['Close'].to_numpy(float), df_in['High'].to_numpy(float), df_in['Low'].to_numpy(float), df_in['ATR'].to_numpy(float)
     b_arr, s_arr = df_in['Buy_Signal'].to_numpy(bool), df_in['Sell_Signal'].to_numpy(bool)
     rsn_arr, idx_arr = df_in['Signal_Reason'].to_numpy(str), df_in.index
 
+    active_until = -1
     for i in range(len(df_in) - 1):
-        if not (b_arr[i] or s_arr[i]): continue
+        if no_overlap and i <= active_until:
+            continue
+        if not (b_arr[i] or s_arr[i]):
+            continue
+
         side = "BUY" if b_arr[i] else "SELL"
         entry, atr = c_arr[i], a_arr[i]
         tp = entry + tp_m * atr if side == "BUY" else entry - tp_m * atr
         sl = entry - sl_m * atr if side == "BUY" else entry + sl_m * atr
-        res, exit_p = "보유만기", c_arr[min(i + n_bars, len(df_in) - 1)]
+        exit_idx = min(i + n_bars, len(df_in) - 1)
+        res, exit_p = "보유만기", c_arr[exit_idx]
 
         for j in range(i + 1, min(i + 1 + n_bars, len(df_in))):
             if side == "BUY":
-                if l_arr[j] <= sl: res, exit_p = "손절", sl; break
-                if h_arr[j] >= tp: res, exit_p = "익절", tp; break
+                if l_arr[j] <= sl: res, exit_p, exit_idx = "손절", sl, j; break
+                if h_arr[j] >= tp: res, exit_p, exit_idx = "익절", tp, j; break
             else:
-                if h_arr[j] >= sl: res, exit_p = "손절", sl; break
-                if l_arr[j] <= tp: res, exit_p = "익절", tp; break
+                if h_arr[j] >= sl: res, exit_p, exit_idx = "손절", sl, j; break
+                if l_arr[j] <= tp: res, exit_p, exit_idx = "익절", tp, j; break
 
+        active_until = exit_idx
         pnl = ((exit_p - entry) / entry * 100) if side == "BUY" else ((entry - exit_p) / entry * 100)
         trades.append({"time": idx_arr[i], "side": side, "reason": rsn_arr[i], "entry": entry, "exit": exit_p, "res": res, "pnl": pnl})
     return pd.DataFrame(trades)
@@ -203,6 +215,10 @@ with st.expander("⚙️ 종목 · 분봉 · 전략 설정", expanded=True):
     trend_on = c3.checkbox("EMA200 + ADX 추세필터", value=True)
     auto_opt = c4.checkbox("승률 최적화 자동 탐색", value=True)
 
+    c5, c6 = st.columns(2)
+    long_only = c5.checkbox("현물 전용 (BUY만 보기)", value=False)
+    no_overlap = c6.checkbox("포지션 중 중복신호 차단", value=True)
+
     default_bars = 16 if tf == "15분봉" else (12 if tf == "30분봉" else 8)
     b1, b2, b3 = st.columns(3)
     n_bars = b1.number_input("최대보유(봉)", 3, 48, default_bars)
@@ -222,7 +238,7 @@ with st.expander("⚙️ 종목 · 분봉 · 전략 설정", expanded=True):
 tab1, tab2 = st.tabs(("📊 메인 종목 정밀 분석", "🔍 워치리스트 일괄 스캔"))
 
 with tab1:
-    df = load_quant_data(sym, tf, s_filter, trend_on)
+    df = load_quant_data(sym, tf, s_filter, trend_on, long_only)
     if df is None:
         st.error("데이터를 불러올 수 없습니다. 티커명(한국 주식은 .KS 또는 .KQ 포함)을 확인해 주세요.")
         st.stop()
@@ -235,7 +251,7 @@ with tab1:
         for nb in nb_opts:
             for tm in tp_opts:
                 for sm in sl_opts:
-                    tmp = run_bt(df, nb, tm, sm)
+                    tmp = run_bt(df, nb, tm, sm, no_overlap)
                     if len(tmp) >= 5:
                         wr = (tmp['pnl'] > 0).mean() * 100
                         if wr > best_wr:
@@ -246,7 +262,7 @@ with tab1:
         else:
             st.warning("유효 표본(5건 이상)이 부족해 기본 설정값을 유지합니다.")
 
-    bt = run_bt(df, n_bars, tp_m, sl_m)
+    bt = run_bt(df, n_bars, tp_m, sl_m, no_overlap)
     last = df.iloc[-1]
     win_rate, tot_pnl, pf, mdd = calc_bt_metrics(bt)
 
@@ -319,15 +335,14 @@ with tab2:
     else:
         scan_msgs = list()
         for tk in tickers:
-            w_df = load_quant_data(tk, tf, s_filter, trend_on)
+            w_df = load_quant_data(tk, tf, s_filter, trend_on, long_only)
             if w_df is None:
                 continue
-            w_bt = run_bt(w_df, n_bars, tp_m, sl_m)
+            w_bt = run_bt(w_df, n_bars, tp_m, sl_m, no_overlap)
             w_wr, w_pnl, w_pf, _ = calc_bt_metrics(w_bt)
             w_last = w_df.iloc[-1]
             w_fmt = "{:,.0f}원" if tk.endswith((".KS", ".KQ")) else "${:,.2f}"
 
-            # 최근 3봉 이내 시그널 확인
             recent_bars = w_df.tail(3)
             sig_rows = recent_bars.loc[recent_bars['Buy_Signal'] | recent_bars['Sell_Signal']]
             if not sig_rows.empty:
