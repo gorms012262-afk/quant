@@ -1,8 +1,8 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import altair as alt
 
 st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
@@ -114,7 +114,30 @@ st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-
 
 st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-tv_interval = "30" if timeframe == "30분봉" else ("60" if timeframe == "1시간봉" else "D")
-nyse_list = ["SPY", "DIA", "IWM", "BRK-B", "JPM", "V", "MA", "WMT", "UNH", "XOM", "KO", "DIS", "BA", "NKE", "ORCL", "CRM"]
-tv_symbol = ticker if ":" in ticker else (f"AMEX:{ticker}" if ticker in ["SPY", "DIA", "IWM", "SOXL", "TQQQ", "SQQQ"] else (f"NYSE:{ticker}" if ticker in nyse_list else f"NASDAQ:{ticker}"))
+# Streamlit 공식 내장 Altair 실시간 캔들 + 이평선 + 거래량 차트 (외부 차단 없음)
+pdf = df.tail(55).copy()
+fmt = '%m/%d' if timeframe == "일봉" else '%m/%d %H:%M'
+pdf['DateStr'] = pdf.index.strftime(fmt)
+pdf['Idx'] = range(len(pdf))
+pdf['Color'] = np.where(pdf['Close'] >= pdf['Open'], '#EF4444', '#3B82F6')
+
+y_min = float(pdf['Low'].min()) * 0.998
+y_max = float(pdf['High'].max()) * 1.002
+
+base = alt.Chart(pdf).encode(
+    x=alt.X('Idx:O', axis=alt.Axis(labels=False, ticks=False, title=None, grid=False))
+)
+
+rule = base.mark_rule(size=1.3).encode(
+    y=alt.Y('Low:Q', scale=alt.Scale(domain=[y_min, y_max]), axis=alt.Axis(orient='right', title=None, gridColor='#1E293B', labelColor='#94A3B8')),
+    y2='High:Q',
+    color=alt.Color('Color:N', scale=None)
+)
+
+bar = base.mark_bar(size=5).encode(
+    y='Open:Q',
+    y2='Close:Q',
+    color=alt.Color('Color:N', scale=None),
+    tooltip=['DateStr:N', 'Open:Q', 'High:Q', 'Low:Q', 'Close:Q', 'Volume:Q']
+)
 
