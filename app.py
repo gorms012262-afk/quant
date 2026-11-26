@@ -1,4 +1,5 @@
-import json, streamlit as st, streamlit.components.v1 as components, yfinance as yf, pandas as pd, numpy as np
+import streamlit as st, yfinance as yf, pandas as pd, numpy as np, plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
@@ -93,82 +94,45 @@ def load_single(symbol, tf, strat_filter):
     return df
 
 def render_tv_chart(df_in, tf):
-    pdf = df_in.tail(120).copy()
+    pdf = df_in.tail(75).copy()
     ny_idx = pdf.index.tz_convert('America/New_York')
-    candles, ema20, ema50, vwap, vols, markers = [], [], [], [], [], []
-    seen_times = set()
-    for ts, r in zip(ny_idx, pdf.itertuples()):
-        t_val = ts.strftime('%Y-%m-%d') if tf == "일봉" else int(ts.timestamp())
-        if t_val in seen_times: continue
-        seen_times.add(t_val)
-        candles.append({"time": t_val, "open": round(float(r.Open), 2), "high": round(float(r.High), 2), "low": round(float(r.Low), 2), "close": round(float(r.Close), 2)})
-        if pd.notna(r.EMA20): ema20.append({"time": t_val, "value": round(float(r.EMA20), 2)})
-        if pd.notna(r.EMA50): ema50.append({"time": t_val, "value": round(float(r.EMA50), 2)})
-        if pd.notna(r.VWAP): vwap.append({"time": t_val, "value": round(float(r.VWAP), 2)})
-        v_col = "rgba(239, 68, 68, 0.45)" if r.Close >= r.Open else "rgba(59, 130, 246, 0.45)"
-        vols.append({"time": t_val, "value": float(r.Volume), "color": v_col})
-        if r.Buy_Signal:
-            markers.append({"time": t_val, "position": "belowBar", "color": "#10B981", "shape": "arrowUp", "text": "BUY"})
-        elif r.Sell_Signal:
-            markers.append({"time": t_val, "position": "aboveBar", "color": "#EF4444", "shape": "arrowDown", "text": "SELL"})
+    x_labels = ny_idx.strftime('%m-%d %H:%M') if tf != "일봉" else ny_idx.strftime('%Y-%m-%d')
 
-    html_code = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://jsdelivr.net"></script>
-    </head>
-    <body style="margin:0;padding:0;background:#131722;font-family:sans-serif;">
-    <div style="border:1px solid #1E293B;border-radius:8px;padding:6px 4px 2px 4px;box-sizing:border-box;">
-      <div style="display:flex;gap:10px;font-size:11px;color:#94A3B8;padding:0 8px 4px 8px;">
-        <span><b style="color:#38BDF8;">━</b> EMA20</span>
-        <span><b style="color:#F59E0B;">━</b> EMA50</span>
-        <span><b style="color:#10B981;">┄</b> VWAP</span>
-        <span style="margin-left:auto;color:#64748B;">터치·줌 가능</span>
-      </div>
-      <div id="tvchart" style="width:100%;height:385px;"></div>
-    </div>
-    <script>
-      window.addEventListener('load', function() {{
-        const container = document.getElementById('tvchart');
-        if (!window.LightweightCharts) {{
-          container.innerHTML = '<div style="color:#EF4444;padding:20px;font-size:12px;">차트 스크립트 로딩 실패</div>';
-          return;
-        }}
-        const chart = LightweightCharts.createChart(container, {{
-          width: container.clientWidth || 350,
-          height: 385,
-          layout: {{ background: {{ type: 'solid', color: '#131722' }}, textColor: '#94A3B8', fontSize: 11 }},
-          grid: {{ vertLines: {{ color: '#1E293B' }}, horzLines: {{ color: '#1E293B' }} }},
-          crosshair: {{ mode: 0 }},
-          rightPriceScale: {{ borderColor: '#1E293B' }},
-          timeScale: {{ borderColor: '#1E293B', timeVisible: true, secondsVisible: false }}
-        }});
-        const cSeries = chart.addCandlestickSeries({{
-          upColor: '#EF4444', downColor: '#3B82F6', borderVisible: false, wickUpColor: '#EF4444', wickDownColor: '#3B82F6'
-        }});
-        cSeries.setData({json.dumps(candles)});
-        cSeries.setMarkers({json.dumps(markers)});
-        const vSeries = chart.addHistogramSeries({{ priceFormat: {{ type: 'volume' }}, priceScaleId: '' }});
-        vSeries.priceScale().applyOptions({{ scaleMargins: {{ top: 0.82, bottom: 0 }} }});
-        vSeries.setData({json.dumps(vols)});
-        const e20 = chart.addLineSeries({{ color: '#38BDF8', lineWidth: 1.5, priceLineVisible: false }});
-        e20.setData({json.dumps(ema20)});
-        const e50 = chart.addLineSeries({{ color: '#F59E0B', lineWidth: 1.5, priceLineVisible: false }});
-        e50.setData({json.dumps(ema50)});
-        const vw = chart.addLineSeries({{ color: '#10B981', lineWidth: 1.5, lineStyle: 2, priceLineVisible: false }});
-        vw.setData({json.dumps(vwap)});
-        chart.timeScale().fitContent();
-        window.addEventListener('resize', () => {{
-          chart.applyOptions({{ width: container.clientWidth }});
-        }});
-      }});
-    </script>
-    </body>
-    </html>
-    """
-    components.html(html_code, height=425)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.78, 0.22])
+    fig.add_trace(go.Candlestick(
+        x=x_labels, open=pdf['Open'], high=pdf['High'], low=pdf['Low'], close=pdf['Close'],
+        increasing_line_color='#EF4444', decreasing_line_color='#3B82F6',
+        increasing_fillcolor='#EF4444', decreasing_fillcolor='#3B82F6', name='캔들'
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(x=x_labels, y=pdf['EMA20'], line=dict(color='#38BDF8', width=1.3), name='EMA20'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=x_labels, y=pdf['EMA50'], line=dict(color='#F59E0B', width=1.3), name='EMA50'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=x_labels, y=pdf['VWAP'], line=dict(color='#10B981', width=1.4, dash='dot'), name='VWAP'), row=1, col=1)
+
+    b_sub = pdf[pdf['Buy_Signal']]
+    if not b_sub.empty:
+        bx = b_sub.index.tz_convert('America/New_York').strftime('%m-%d %H:%M') if tf != "일봉" else b_sub.index.tz_convert('America/New_York').strftime('%Y-%m-%d')
+        fig.add_trace(go.Scatter(x=bx, y=b_sub['Low']*0.996, mode='markers', marker=dict(symbol='triangle-up', size=11, color='#10B981'), name='강력매수'), row=1, col=1)
+
+    s_sub = pdf[pdf['Sell_Signal']]
+    if not s_sub.empty:
+        sx = s_sub.index.tz_convert('America/New_York').strftime('%m-%d %H:%M') if tf != "일봉" else s_sub.index.tz_convert('America/New_York').strftime('%Y-%m-%d')
+        fig.add_trace(go.Scatter(x=sx, y=s_sub['High']*1.004, mode='markers', marker=dict(symbol='triangle-down', size=11, color='#EF4444'), name='매도'), row=1, col=1)
+
+    v_colors = ['#EF4444' if c >= o else '#3B82F6' for c, o in zip(pdf['Close'], pdf['Open'])]
+    fig.add_trace(go.Bar(x=x_labels, y=pdf['Volume'], marker_color=v_colors, opacity=0.6, name='거래량'), row=2, col=1)
+
+    fig.update_layout(
+        paper_bgcolor='#131722', plot_bgcolor='#131722',
+        font=dict(color='#94A3B8', size=10),
+        margin=dict(l=8, r=42, t=28, b=18),
+        height=410,
+        xaxis_rangeslider_visible=False,
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0, font=dict(size=10)),
+        hovermode='x unified'
+    )
+    fig.update_xaxes(showgrid=True, gridcolor='#1E293B', nticks=6)
+    fig.update_yaxes(showgrid=True, gridcolor='#1E293B', side='right')
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
 tab1, tab2 = st.tabs(["📊 종목 차트 분석", "📡 관심 종목 스캐너"])
 
@@ -209,3 +173,28 @@ with tab1:
 
     st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-title">{ticker} ({timeframe})</div><div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.75rem;color:{cp};">({sgn}{p_pct:.2f}%)</span></div></div><div class="metric-card"><div class="metric-title">현재 추세 판정</div><div style="margin-top:2px;">{st_html}</div></div><div class="metric-card"><div class="metric-title">최근 강력매수 ({lb_str})</div><div class="metric-value" style="font-size:0.84rem;color:#10B981;">{lb_rsn}</div></div><div class="metric-card"><div class="metric-title">강력매수 승률 ({total_trades}회) / RSI</div><div class="metric-value" style="color:{rc};">{win_rate:.1f}% <span style="font-size:0.78rem;color:#94A3B8;">(RSI {rv:.1f})</span></div></div></div>', unsafe_allow_html=True)
 
+    st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
+
+    render_tv_chart(df, timeframe)
+
+    sig_df = df[df['Buy_Signal'] | df['Sell_Signal']].tail(8).iloc[::-1].copy()
+    st.markdown("<div style='font-size:0.85rem;font-weight:700;color:#F8FAFC;margin:10px 0 6px 2px;'>📋 최근 강력매수 및 손절/익절 가이드</div>", unsafe_allow_html=True)
+    if not sig_df.empty:
+        sig_ny = sig_df.index.tz_convert('America/New_York')
+        for idx_dt, row in zip(sig_ny, sig_df.itertuples()):
+            t_str = idx_dt.strftime('%m-%d %H:%M') if timeframe != "일봉" else idx_dt.strftime('%Y-%m-%d')
+            badge = "<span class='badge-buy'>🟢 강력매수</span>" if row.Buy_Signal else "<span class='badge-sell'>🔴 매도</span>"
+            guide = f"목표 <b style='color:#EF4444;'>${row.Close*1.015:,.2f}</b> · 손절 <b style='color:#3B82F6;'>${row.Close*0.990:,.2f}</b>" if row.Buy_Signal else "청산/관망"
+            st.markdown(f"<div class='list-card'><div class='list-top'><div>{badge} <b style='font-size:0.82rem;color:#F8FAFC;margin-left:4px;'>{row.Signal_Reason}</b></div><div style='font-size:0.85rem;font-weight:700;color:#F8FAFC;'>${row.Close:,.2f}</div></div><div class='list-sub'><span>🕒 {t_str} (NY)</span><span>{guide}</span></div></div>", unsafe_allow_html=True)
+    else:
+        st.info("최근 구간에 발생한 강력매수 신호가 없습니다.")
+
+with tab2:
+    if 'watch_list' not in st.session_state:
+        st.session_state.watch_list = "SOXL, TQQQ, NVDL, TSLL, SQQQ"
+    c1, c2, c3 = st.columns(3)
+    if c1.button("🔥 3배 레버리지", use_container_width=True):
+        st.session_state.watch_list = "SOXL, TQQQ, NVDL, TSLL, SQQQ"
+    if c2.button("💻 빅테크 주도주", use_container_width=True):
+        st.session_state.watch_list = "NVDA, TSLA, AAPL, MSFT, META, AMZN"
+    if c3.button("📈 대표 지수 ETF", use_container_width=True):
