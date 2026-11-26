@@ -1,4 +1,4 @@
-import io, base64, streamlit as st, yfinance as yf, pandas as pd, numpy as np, matplotlib.pyplot as plt, matplotlib.patches as patches
+import io, base64, streamlit as st, yfinance as yf, pandas as pd, numpy as np, mplfinance as mpf, matplotlib.pyplot as plt
 
 st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
@@ -16,7 +16,7 @@ header[data-testid="stHeader"] { background-color:#0B0E14!important; }
 .ohlc-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; background-color:#131722; border:1px solid #1E293B; border-radius:10px; padding:10px 8px; margin-bottom:10px; text-align:center; }
 .ohlc-lbl { font-size:0.72rem; color:#64748B; margin-bottom:2px; }
 .ohlc-val { font-size:0.88rem; font-weight:700; color:#F8FAFC; }
-.chart-wrap { background-color:#131722; border:1px solid #1E293B; border-radius:10px; padding:8px; margin-bottom:14px; }
+.chart-wrap { background-color:#131722; border:1px solid #1E293B; border-radius:10px; padding:6px; margin-bottom:14px; }
 .chart-wrap img { width:100%; height:auto; display:block; border-radius:6px; }
 div[data-testid="stVerticalBlockBorderWrapper"] { background-color:#131722!important; border:1px solid #1E293B!important; border-radius:10px!important; padding:12px!important; }
 div[data-baseweb="input"]>div, div[data-baseweb="select"]>div { background-color:#F8FAFC!important; color:#0B0E14!important; border-radius:8px!important; }
@@ -49,10 +49,10 @@ def load_data(symbol, tf):
     g = d.where(d > 0, 0).rolling(14).mean()
     l = (-d.where(d < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + g / l.replace(0, np.nan)))
-    df['Vol_MA20'] = df['Volume'].rolling(20).mean()
     tp = (df['High'] + df['Low'] + df['Close']) / 3
     df['TP_Vol'] = tp * df['Volume']
     df['VWAP'] = (df.groupby('Date_NY')['TP_Vol'].cumsum() / df.groupby('Date_NY')['Volume'].cumsum()) if tf in ["30분봉", "1시간봉"] else (df['TP_Vol'].rolling(20).sum() / df['Volume'].rolling(20).sum())
+    df['Vol_MA20'] = df['Volume'].rolling(20).mean()
     df['Buy_Signal'], df['Sell_Signal'], df['Signal_Reason'] = False, False, ""
 
     if tf in ["30분봉", "1시간봉"]:
@@ -112,21 +112,18 @@ st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-
 
 st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-pdf = df.tail(55).copy()
-pidx = pdf.index
-pdf = pdf.reset_index(drop=True)
+pdf = df.tail(50).copy()
+pdf.index = pdf.index.tz_convert('America/New_York')
 
-fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(6.8, 7.0), dpi=160, gridspec_kw={'height_ratios':[3.3, 1, 1]}, sharex=True)
-fig.patch.set_facecolor('#131722')
-for ax in (ax1, ax2, ax3):
-    ax.set_facecolor('#0B0E14')
-    ax.tick_params(colors='#94A3B8', labelsize=8)
-    ax.grid(True, color='#1E293B', linewidth=0.5)
-    for sp in ax.spines.values(): sp.set_color('#1E293B')
+mc = mpf.make_marketcolors(up='#EF4444', down='#3B82F6', edge='inherit', wick='inherit', volume={'up':'#EF4444', 'down':'#3B82F6'})
+style = mpf.make_mpf_style(base_mpf_style='nightclouds', marketcolors=mc, facecolor='#0B0E14', figcolor='#131722', gridcolor='#1E293B', gridstyle='-', y_on_right=True)
 
-rng = max(0.01, pdf['High'].max() - pdf['Low'].min())
-for i, r in pdf.iterrows():
-    c = '#EF4444' if r['Close'] >= r['Open'] else '#3B82F6'
-    ax1.plot([i, i], [r['Low'], r['High']], color=c, linewidth=1.0)
-    ax1.add_patch(patches.Rectangle((i-0.32, min(r['Open'], r['Close'])), 0.64, max(abs(r['Close']-r['Open']), rng*0.004), facecolor=c, edgecolor=c))
+apds = [
+    mpf.make_addplot(pdf['EMA20'], color='#38BDF8', width=1.1),
+    mpf.make_addplot(pdf['EMA50'], color='#F59E0B', width=1.1),
+    mpf.make_addplot(pdf['VWAP'], color='#10B981', width=1.2, linestyle='--'),
+    mpf.make_addplot(pdf['RSI'], panel=2, color='#818CF8', width=1.2, ylabel='RSI')
+]
 
+buy_y = np.where(pdf['Buy_Signal'], pdf['Low'] * 0.996, np.nan)
+sell_y = np.where(pdf['Sell_Signal'], pdf['High'] * 1.004, np.nan)
