@@ -132,7 +132,7 @@ with tab1:
         st.stop()
 
     wins, losses = 0, 0
-    for bi in np.where(df['Buy_Signal']):
+        for bi in np.flatnonzero(df['Buy_Signal'])
         if bi + 1 >= len(df): continue
         entry = df['Close'].iloc[bi]
         future = df.iloc[bi+1 : min(bi+8, len(df))]
