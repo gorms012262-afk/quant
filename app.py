@@ -8,7 +8,7 @@ import matplotlib.patches as patches
 st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""<style>
-html, body, [data-testid="stAppViewContainer"], .stApp { background-color:#0B0E14!important; color:#E2E8F0!important; overflow-y:auto!important; -webkit-overflow-scrolling:touch!important; height:auto!important; }
+[data-testid="stAppViewContainer"], .stApp { background-color:#0B0E14!important; color:#E2E8F0!important; }
 header[data-testid="stHeader"] { background-color:#0B0E14!important; height:2rem!important; }
 .block-container { padding:2.2rem 0.7rem 4rem 0.7rem!important; }
 .kpi-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:6px; margin:6px 0 8px 0; }
@@ -18,7 +18,7 @@ header[data-testid="stHeader"] { background-color:#0B0E14!important; height:2rem
 .badge-buy { background-color:rgba(16,185,129,0.15); color:#10B981; border:1px solid #10B981; padding:2px 6px; border-radius:5px; font-size:0.72rem; font-weight:600; display:inline-block; }
 .badge-sell { background-color:rgba(239,68,68,0.15); color:#EF4444; border:1px solid #EF4444; padding:2px 6px; border-radius:5px; font-size:0.72rem; font-weight:600; display:inline-block; }
 .badge-neutral { background-color:rgba(148,163,184,0.15); color:#94A3B8; border:1px solid #475569; padding:2px 6px; border-radius:5px; font-size:0.72rem; font-weight:600; display:inline-block; }
-.ohlc-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; background-color:#131722; border:1px solid #1E293B; border-radius:8px; padding:6px; margin-bottom:6px; text-align:center; }
+.ohlc-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; background-color:#131722; border:1px solid #1E293B; border-radius:8px; padding:6px; margin-bottom:8px; text-align:center; }
 .ohlc-lbl { font-size:0.65rem; color:#64748B; }
 .ohlc-val { font-size:0.8rem; font-weight:700; color:#F8FAFC; }
 div[data-testid="stVerticalBlockBorderWrapper"] { background-color:#131722!important; border:1px solid #1E293B!important; border-radius:8px!important; padding:8px!important; }
@@ -26,7 +26,6 @@ div[data-baseweb="input"]>div, div[data-baseweb="select"]>div { background-color
 div[data-baseweb="input"] input { color:#0B0E14!important; font-weight:600!important; padding:4px 8px!important; }
 label p, .stRadio label p { color:#E2E8F0!important; font-size:0.8rem!important; }
 .stButton>button { background-color:#1E293B!important; color:#F8FAFC!important; border:1px solid #334155!important; border-radius:6px!important; padding:0.25rem 0.5rem!important; min-height:34px!important; }
-div[data-testid="stImage"] img { width:100%!important; height:auto!important; min-height:260px!important; display:block!important; border-radius:8px!important; }
 </style>""", unsafe_allow_html=True)
 
 with st.container(border=True):
@@ -116,11 +115,12 @@ st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-
 
 st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
+# 캔들 차트 그리기 (plt.close 제거 및 기본 레이아웃 복원)
 pdf = df.tail(55).copy()
 pidx = pdf.index
 pdf = pdf.reset_index(drop=True)
 
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6.5, 4.4), dpi=180, gridspec_kw={'height_ratios': [3.3, 1.0]}, sharex=True)
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6.5, 4.4), dpi=160, gridspec_kw={'height_ratios': [3.3, 1.0]}, sharex=True)
 fig.patch.set_facecolor('#131722')
 
 for ax in (ax1, ax2):
@@ -134,3 +134,5 @@ for ax in (ax1, ax2):
 rng = max(0.01, float(pdf['High'].max() - pdf['Low'].min()))
 for i, r in pdf.iterrows():
     c = '#EF4444' if r['Close'] >= r['Open'] else '#3B82F6'
+    ax1.plot([i, i], [r['Low'], r['High']], color=c, linewidth=1.1, zorder=2)
+    ax1.add_patch(patches.Rectangle((i - 0.34, min(r['Open'], r['Close'])), 0.68, max(abs(r['Close'] - r['Open']), rng * 0.005), facecolor=c, edgecolor=c, zorder=3))
