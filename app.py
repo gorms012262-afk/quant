@@ -126,3 +126,4 @@ apds.append(mpf.make_addplot(pdf['RSI'], panel=2, color='#818CF8', width=1.2, yl
 buy_y = np.where(pdf['Buy_Signal'], pdf['Low'] * 0.996, np.nan)
 sell_y = np.where(pdf['Sell_Signal'], pdf['High'] * 1.004, np.nan)
 
+if not np.all(np.isnan(buy_y)): apds.append(mpf.make_addplot(buy_y, type='scatter', markersize=65, marker='^', color='#10B981'))
