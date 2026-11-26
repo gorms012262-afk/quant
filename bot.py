@@ -5,9 +5,13 @@ import numpy as np
 
 WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "")
 WATCHLIST = ["TQQQ", "SOXL", "NVDL", "TSLL", "NVDA", "QQQ"]
+TIMEFRAMES = [
+    ("30분봉", "1mo", "30m"),
+    ("1시간봉", "3mo", "1h")
+]
 
-def check_symbol(sym):
-    raw = yf.download(sym, period="1mo", interval="15m", progress=False, auto_adjust=True)
+def check_symbol(sym, tf_name, p, iv):
+    raw = yf.download(sym, period=p, interval=iv, progress=False, auto_adjust=True)
     if raw is None or raw.empty: return None
     if isinstance(raw.columns, pd.MultiIndex): raw.columns = raw.columns.get_level_values(0)
     df = raw.dropna().copy()
@@ -34,29 +38,34 @@ def check_symbol(sym):
 
     r, pv, pv2 = df.iloc[-1], df.iloc[-2], df.iloc[-3]
     rb, rs = [], []
-    if r['Close'] > r['VWAP'] and (pv['RSI'] <= 45 or pv2['RSI'] <= 43) and r['Close'] > r['Open']: rb.append("VWAP+RSI 눌림")
+
+    if r['Close'] > r['VWAP'] and (pv['RSI'] <= 47 or pv2['RSI'] <= 45) and r['Close'] > r['Open']: rb.append("VWAP+RSI 눌림")
     if r['EMA20'] > r['EMA50'] and (r['Low'] <= r['EMA20']*1.005) and r['Close'] > r['Open']: rb.append("EMA 정배열 회귀")
     if r['Close'] > r['VWAP'] and r['MACD_Hist'] > 0 and pv['MACD_Hist'] <= 0 and r['Volume'] > r['Vol_MA20']*1.1: rb.append("MACD+VWAP 반전")
     if (pv['Low'] <= pv['BB_Low'] or r['Low'] <= r['BB_Low']) and r['Close'] > r['BB_Low'] and r['Close'] > r['Open'] and r['RSI'] < 50: rb.append("볼린저 하단 반등")
 
     v_guard = (r['Close'] > r['VWAP']) and (r['EMA20'] > pv['EMA20'])
     if not v_guard:
-        if r['Close'] < r['VWAP'] and (pv['RSI'] >= 60 or pv2['RSI'] >= 62) and r['Close'] < r['Open']: rs.append("VWAP 저항+RSI 과열")
+        if r['Close'] < r['VWAP'] and (pv['RSI'] >= 58 or pv2['RSI'] >= 60) and r['Close'] < r['Open']: rs.append("VWAP 저항+RSI 과열")
         if r['EMA20'] < r['EMA50'] and (r['High'] >= r['EMA20']*0.995) and r['Close'] < r['Open']: rs.append("EMA 역배열 저항")
         if r['Close'] < r['VWAP'] and r['MACD_Hist'] < 0 and pv['MACD_Hist'] >= 0: rs.append("MACD+VWAP 하락반전")
-        if (pv['High'] >= pv['BB_Up'] or r['High'] >= r['BB_Up']) and r['Close'] < r['BB_Up'] and r['Close'] < r['Open'] and r['RSI'] > 52: rs.append("볼린저 상단 이탈")
+        if (pv['High'] >= pv['BB_Up'] or r['High'] >= pv['BB_Up']) and r['Close'] < r['BB_Up'] and r['Close'] < r['Open'] and r['RSI'] > 52: rs.append("볼린저 상단 이탈")
 
     if rb and r['Close'] > r['EMA100'] and r['RSI'] < 70:
         tp, sl = r['Close'] + 2.0 * r['ATR'], r['Close'] - 1.0 * r['ATR']
         tag = "★강력매수: " if len(rb) >= 2 else ""
-        return f"🟢 **[{sym} 15분봉 매수 시그널]**\n• 전략: {tag}{', '.join(rb)}\n• 진입가: `${r['Close']:.2f}` | 목표: `${tp:.2f}` | 손절: `${sl:.2f}`"
+        return f"🟢 **[{sym} {tf_name} 매수 시그널]**\n• 전략: {tag}{', '.join(rb)}\n• 진입가: `${r['Close']:.2f}` | 목표: `${tp:.2f}` | 손절: `${sl:.2f}`"
     if rs and r['Close'] < r['EMA100'] and r['RSI'] > 30:
         tp, sl = r['Close'] - 2.0 * r['ATR'], r['Close'] + 1.0 * r['ATR']
         tag = "★강력매도: " if len(rs) >= 2 else ""
-        return f"🔴 **[{sym} 15분봉 매도 시그널]**\n• 전략: {tag}{', '.join(rs)}\n• 진입가: `${r['Close']:.2f}` | 목표: `${tp:.2f}` | 손절: `${sl:.2f}`"
+        return f"🔴 **[{sym} {tf_name} 매도 시그널]**\n• 전략: {tag}{', '.join(rs)}\n• 진입가: `${r['Close']:.2f}` | 목표: `${tp:.2f}` | 손절: `${sl:.2f}`"
     return None
 
 if __name__ == "__main__" and WEBHOOK:
-    msgs = [m for s in WATCHLIST if (m := check_symbol(s))]
+    msgs = []
+    for sym in WATCHLIST:
+        for tf_name, p, iv in TIMEFRAMES:
+            m = check_symbol(sym, tf_name, p, iv)
+            if m: msgs.append(m)
     if msgs:
-        requests.post(WEBHOOK, json={"content": "\n\n".join(msgs)}, timeout=10)
+        requests.post(WEBHOOK, json={"content": "\n\n".join(msgs)[:1950]}, timeout=10)
