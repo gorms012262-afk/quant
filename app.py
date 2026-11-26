@@ -1,8 +1,10 @@
+import io, base64
 import streamlit as st
-import streamlit.components.v1 as components
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
@@ -112,39 +114,27 @@ rc = "#EF4444" if rv >= 70 else ("#10B981" if rv <= 30 else "#F8FAFC")
 
 st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-title">{ticker} ({timeframe})</div><div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.8rem;color:{cp};">({sgn}{p_pct:.2f}%)</span></div></div><div class="metric-card"><div class="metric-title">현재 추세 판정</div><div style="margin-top:2px;">{st_html}</div></div><div class="metric-card"><div class="metric-title">최근 매수 ({lb_str})</div><div class="metric-value" style="font-size:0.9rem;color:#10B981;">{lb_rsn}</div></div><div class="metric-card"><div class="metric-title">RSI(14) / 매도({ls_str})</div><div class="metric-value" style="color:{rc};">{rv:.1f}</div></div></div>', unsafe_allow_html=True)
 
-st.markdown(f"#### 📊 {ticker} 실시간 캔들 차트 ({timeframe})")
+st.markdown(f"#### 📊 {ticker} 실시간 캔들 차트 ({timeframe}) `v5`")
 
 st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가 (Open)</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가 (High)</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가 (Low)</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
+# 캔들 + 거래량 차트를 PNG 이미지로 생성하여 <img> 태그로 직접 출력 (아이폰 100% 호환)
 pdf = df.tail(55).copy()
 pidx = pdf.index
 pdf = pdf.reset_index(drop=True)
 
-W, H = 760, 460
-PAD_L, PAD_R, PAD_T, PAD_B = 12, 62, 16, 26
-PRICE_H = 290
-VOL_TOP = 325
-VOL_H = 105
-PLOT_W = W - PAD_L - PAD_R
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6.5, 4.8), dpi=180, gridspec_kw={'height_ratios': [3.2, 1.0]}, sharex=True)
+fig.patch.set_facecolor('#131722')
 
-p_min, p_max = float(pdf['Low'].min()), float(pdf['High'].max())
-p_pad = max((p_max - p_min) * 0.06, 0.05)
-y_min, y_max = p_min - p_pad, p_max + p_pad
-y_rng = max(y_max - y_min, 0.01)
-v_max = max(float(pdf['Volume'].max()), 1.0)
+for ax in (ax1, ax2):
+    ax.set_facecolor('#0B0E14')
+    ax.tick_params(colors='#94A3B8', labelsize=8)
+    ax.yaxis.tick_right()
+    ax.grid(True, color='#1E293B', linewidth=0.5, linestyle='--')
+    for sp in ax.spines.values():
+        sp.set_color('#1E293B')
 
-def py(val):
-    return PAD_T + PRICE_H - ((val - y_min) / y_rng) * PRICE_H
-
-def vy(val):
-    return VOL_TOP + VOL_H - (val / v_max) * VOL_H
-
-n = len(pdf)
-step = PLOT_W / n
-cw = max(step * 0.62, 3.0)
-
-svg = [f'<svg viewBox="0 0 {W} {H}" style="width:100%;height:100%;display:block;background:#0B0E14;border-radius:10px;">']
-
-for k in range(5):
-    val = y_min + (y_rng * k / 4)
-    yy = py(val)
+rng = max(0.01, float(pdf['High'].max() - pdf['Low'].min()))
+for i, r in pdf.iterrows():
+    c = '#EF4444' if r['Close'] >= r['Open'] else '#3B82F6'
+    ax1.plot([i, i], [r['Low'], r['High']], color=c, linewidth=1.1, zorder=2)
