@@ -32,13 +32,9 @@ with st.expander("⚙️ 종목 / 봉 기준 / 전략 설정 (눌러서 열기)"
     if st.button("🔄 데이터 새로고침", use_container_width=True):
         st.cache_data.clear()
 
-@st.cache_data(ttl=60)
-def load_data(symbol, tf, strat_filter):
-    p, iv = ("1mo", "30m") if tf == "30분봉" else (("3mo", "1h") if tf == "1시간봉" else ("2y", "1d"))
-    df = yf.download(symbol, period=p, interval=iv, progress=False, auto_adjust=True)
-    if df.empty: return None
-    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-    df = df.dropna().copy()
+def analyze_df(raw_df, tf, strat_filter):
+    if raw_df is None or raw_df.empty: return None
+    df = raw_df.dropna().copy()
     if len(df) < 5: return None
     if df.index.tz is None: df.index = df.index.tz_localize('UTC')
     df_ny = df.tz_convert('America/New_York')
@@ -102,16 +98,41 @@ def load_data(symbol, tf, strat_filter):
             if rs: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rs)
     return df
 
+@st.cache_data(ttl=60)
+def load_single(symbol, tf, strat_filter):
+    p, iv = ("1mo", "30m") if tf == "30분봉" else (("3mo", "1h") if tf == "1시간봉" else ("2y", "1d"))
+    raw = yf.download(symbol, period=p, interval=iv, progress=False, auto_adjust=True)
+    if isinstance(raw.columns, pd.MultiIndex): raw.columns = raw.columns.get_level_values(0)
+    return analyze_df(raw, tf, strat_filter)
+
+@st.cache_data(ttl=60)
+def load_batch(symbols_tuple, tf, strat_filter):
+    p, iv = ("1mo", "30m") if tf == "30분봉" else (("3mo", "1h") if tf == "1시간봉" else ("2y", "1d"))
+    syms = list(symbols_tuple)
+    if len(syms) == 1:
+        res = load_single(syms[0], tf, strat_filter)
+        return {syms[0]: res} if res is not None else {}
+    raw = yf.download(syms, period=p, interval=iv, group_by='ticker', threads=True, progress=False, auto_adjust=True)
+    out = {}
+    for sym in syms:
+        try:
+            sub = raw[sym] if sym in raw.columns.get_level_values(0) else None
+            adf = analyze_df(sub, tf, strat_filter)
+            if adf is not None: out[sym] = adf
+        except Exception:
+            continue
+    return out
+
 tab1, tab2 = st.tabs(["📊 종목 차트 분석", "📡 관심 종목 스캐너"])
 
 with tab1:
-    df = load_data(ticker, timeframe, strategy_filter)
+    df = load_single(ticker, timeframe, strategy_filter)
     if df is None:
         st.error(f"❌ '{ticker}' 종목 데이터를 불러올 수 없습니다.")
         st.stop()
 
     wins, losses = 0, 0
-    for bi in np.where(df['Buy_Signal'])[0]:
+    for bi in np.where(df['Buy_Signal']):
         if bi + 1 >= len(df): continue
         entry = df['Close'].iloc[bi]
         future = df.iloc[bi+1 : min(bi+8, len(df))]
@@ -168,26 +189,3 @@ with tab1:
             "목표가(+1.5%)": np.where(sig_df['Buy_Signal'], (sig_df['Close']*1.015).map('${:,.2f}'.format), "-"),
             "손절가(-1.0%)": np.where(sig_df['Buy_Signal'], (sig_df['Close']*0.990).map('${:,.2f}'.format), "-")
         })
-        st.markdown("<div style='font-size:0.82rem;font-weight:700;color:#E2E8F0;margin:10px 0 4px 2px;'>📋 최근 매매 신호 및 손절/익절 가이드</div>", unsafe_allow_html=True)
-        st.dataframe(hist_df, use_container_width=True, hide_index=True)
-
-with tab2:
-    if 'watch_list' not in st.session_state:
-        st.session_state.watch_list = "SOXL, TQQQ, NVDL, TSLL, SQQQ"
-    c1, c2, c3 = st.columns(3)
-    if c1.button("🔥 3배 레버리지", use_container_width=True):
-        st.session_state.watch_list = "SOXL, TQQQ, NVDL, TSLL, SQQQ"
-    if c2.button("💻 빅테크 주도주", use_container_width=True):
-        st.session_state.watch_list = "NVDA, TSLA, AAPL, MSFT, META, AMZN"
-    if c3.button("📈 대표 지수 ETF", use_container_width=True):
-        st.session_state.watch_list = "QQQ, SPY, IWM, DIA"
-
-    watch_input = st.text_input("관심 종목 목록 (쉼표로 구분)", key="watch_list")
-    symbols = [s.strip().upper() for s in watch_input.split(",") if s.strip()]
-    scan_rows = []
-    with st.spinner("관심 종목을 자동 분석 중입니다..."):
-        for sym in symbols:
-            sdf = load_data(sym, timeframe, strategy_filter)
-            if sdf is None: continue
-            lr = sdf.iloc[-1]
-            recent_sig = sdf[sdf['Buy_Signal'] | sdf['Sell_Signal']]
