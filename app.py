@@ -113,21 +113,25 @@ st.markdown(f"#### 📊 {ticker} 실시간 차트 ({timeframe})")
 with st.container(border=True):
     st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가 (Open)</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가 (High)</div><div class="ohlc-val" style="color:#10B981;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가 (Low)</div><div class="ohlc-val" style="color:#EF4444;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-    pdf = df.tail(55).copy()
+    # 최근 60개 봉 데이터 추출
+    pdf = df.tail(60).copy()
     pidx = pdf.index
     pdf = pdf.reset_index(drop=True)
 
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(7, 7.2), dpi=160, gridspec_kw={'height_ratios':[3.3, 1, 1]}, sharex=True)
+    # 3단 차트 구성 (메인 캔들 / 거래량 / RSI)
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(7, 7.5), dpi=160, gridspec_kw={'height_ratios': [3.4, 1.1, 1.0]}, sharex=True)
     fig.patch.set_facecolor('#131722')
     for ax in (ax1, ax2, ax3):
         ax.set_facecolor('#0B0E14')
-        ax.tick_params(colors='#94A3B8', labelsize=8)
-        ax.grid(True, color='#1E293B', linewidth=0.5)
-        for sp in ax.spines.values(): sp.set_color('#1E293B')
+        ax.tick_params(colors='#94A3B8', labelsize=7.5)
+        ax.grid(True, color='#1E293B', linewidth=0.5, linestyle='--')
+        for sp in ax.spines.values():
+            sp.set_color('#1E293B')
 
+    # 1. 메인 캔들 차트 (두 번째 사진처럼 양봉=빨강, 음봉=파랑)
     rng = max(0.01, pdf['High'].max() - pdf['Low'].min())
     for i, r in pdf.iterrows():
-        c = '#10B981' if r['Close'] >= r['Open'] else '#EF4444'
-        ax1.plot([i, i], [r['Low'], r['High']], color=c, linewidth=1.0)
-        ax1.add_patch(patches.Rectangle((i-0.32, min(r['Open'], r['Close'])), 0.64, max(abs(r['Close']-r['Open']), rng*0.004), facecolor=c, edgecolor=c))
-
+        c = '#EF4444' if r['Close'] >= r['Open'] else '#3B82F6'
+        # 꼬리 (고가~저가)
+        ax1.plot([i, i], [r['Low'], r['High']], color=c, linewidth=1.0, zorder=2)
+        # 몸통 (시가~종가)
