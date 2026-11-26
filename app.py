@@ -2,42 +2,35 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""<style>
 .stApp { background-color: #0B0E14; color: #E2E8F0; }
-.block-container { padding-top: 0.6rem !important; padding-bottom: 1rem !important; padding-left: 0.6rem !important; padding-right: 0.6rem !important; }
-header[data-testid="stHeader"] { background-color: #0B0E14 !important; height: 2.2rem !important; }
-.kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 8px; }
-.metric-card { background-color: #131722; border: 1px solid #1E293B; border-radius: 8px; padding: 8px 10px; }
-.metric-title { font-size: 0.72rem; color: #94A3B8; margin-bottom: 2px; }
-.metric-value { font-size: 1.1rem; font-weight: 700; color: #F8FAFC; }
-.badge-buy { background-color: rgba(16,185,129,0.15); color: #10B981; border: 1px solid #10B981; padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; display: inline-block; }
-.badge-sell { background-color: rgba(239,68,68,0.15); color: #EF4444; border: 1px solid #EF4444; padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; display: inline-block; }
-.badge-neutral { background-color: rgba(148,163,184,0.15); color: #94A3B8; border: 1px solid #475569; padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; display: inline-block; }
-div[data-testid="stExpander"] { background-color: #131722 !important; border: 1px solid #1E293B !important; border-radius: 8px !important; margin-bottom: 8px !important; }
-div[data-testid="stExpander"] summary p { color: #E2E8F0 !important; font-size: 0.85rem !important; font-weight: 600 !important; }
-div[data-baseweb="input"] > div, div[data-baseweb="select"] > div { background-color: #0B0E14 !important; color: #F8FAFC !important; border-color: #334155 !important; }
-div[data-baseweb="input"] input { color: #F8FAFC !important; }
-label p, .stRadio label p { color: #E2E8F0 !important; font-size: 0.82rem !important; }
-.stButton > button { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #334155 !important; }
+.block-container { padding-top: 1rem !important; padding-bottom: 1.5rem !important; padding-left: 0.8rem !important; padding-right: 0.8rem !important; }
+header[data-testid="stHeader"] { background-color: #0B0E14 !important; }
+.kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; margin-bottom: 12px; }
+.metric-card { background-color: #131722; border: 1px solid #1E293B; border-radius: 10px; padding: 12px; }
+.metric-title { font-size: 0.78rem; color: #94A3B8; margin-bottom: 4px; }
+.metric-value { font-size: 1.25rem; font-weight: 700; color: #F8FAFC; }
+.badge-buy { background-color: rgba(16,185,129,0.15); color: #10B981; border: 1px solid #10B981; padding: 3px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; display: inline-block; }
+.badge-sell { background-color: rgba(239,68,68,0.15); color: #EF4444; border: 1px solid #EF4444; padding: 3px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; display: inline-block; }
+.badge-neutral { background-color: rgba(148,163,184,0.15); color: #94A3B8; border: 1px solid #475569; padding: 3px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; display: inline-block; }
+div[data-testid="stVerticalBlockBorderWrapper"] { background-color: #131722 !important; border: 1px solid #1E293B !important; border-radius: 10px !important; padding: 12px !important; }
+div[data-baseweb="input"] > div, div[data-baseweb="select"] > div { background-color: #F8FAFC !important; color: #0B0E14 !important; border-radius: 8px !important; }
+div[data-baseweb="input"] input { color: #0B0E14 !important; font-weight: 600 !important; }
+label p, .stRadio label p { color: #E2E8F0 !important; font-size: 0.85rem !important; }
+.stButton > button { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #334155 !important; border-radius: 8px !important; }
 </style>""", unsafe_allow_html=True)
 
-with st.expander("⚙️ 종목 검색 / 봉 기준 / 전략 필터", expanded=False):
-    c1, c2 = st.columns([1.2, 1.8])
-    with c1:
-        ticker = st.text_input("티커 (예: QQQ, NVDA, TSLA)", value="QQQ").upper().strip()
-    with c2:
-        timeframe = st.radio("봉 기준", ["30분봉", "1시간봉", "일봉"], horizontal=True)
-    c3, c4 = st.columns([2.2, 1])
-    with c3:
-        strategy_filter = st.selectbox("전략 필터", ["전체 전략 통합", "1. ORB (오프닝 레인지 돌파)", "2. VWAP + RSI 눌림목", "3. EMA 정배열 회귀", "4. 갭 채우기 (Gap Fill) 매도"], label_visibility="collapsed")
-    with c4:
-        if st.button("🔄 새로고침", use_container_width=True):
-            st.cache_data.clear()
+with st.container(border=True):
+    ticker = st.text_input("티커 (예: QQQ, NVDA, TSLA)", value="QQQ").upper().strip()
+    timeframe = st.radio("봉 기준", ["30분봉", "1시간봉", "일봉"], horizontal=True)
+    strategy_filter = st.selectbox("전략 필터", ["전체 전략 통합", "1. ORB (오프닝 레인지 돌파)", "2. VWAP + RSI 눌림목", "3. EMA 정배열 회귀", "4. 갭 채우기 (Gap Fill) 매도"], label_visibility="collapsed")
+    if st.button("🔄 새로고침", use_container_width=True):
+        st.cache_data.clear()
 
 @st.cache_data(ttl=60)
 def load_and_process_data(symbol, tf):
@@ -166,7 +159,7 @@ st.markdown(f"""
 <div class="kpi-grid">
     <div class="metric-card">
         <div class="metric-title">{ticker} ({timeframe})</div>
-        <div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.78rem;color:{color_p};">({sign}{price_pct:.2f}%)</span></div>
+        <div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.82rem;color:{color_p};">({sign}{price_pct:.2f}%)</span></div>
     </div>
     <div class="metric-card">
         <div class="metric-title">현재 추세 판정</div>
@@ -174,7 +167,7 @@ st.markdown(f"""
     </div>
     <div class="metric-card">
         <div class="metric-title">최근 매수 ({last_buy_str})</div>
-        <div class="metric-value" style="font-size:0.9rem;color:#10B981;">{last_buy_reason}</div>
+        <div class="metric-value" style="font-size:0.95rem;color:#10B981;">{last_buy_reason}</div>
     </div>
     <div class="metric-card">
         <div class="metric-title">RSI(14) / 매도({last_sell_str})</div>
@@ -183,6 +176,14 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-plot_df = df.tail(60).copy().reset_index(drop=True)
-x_idx = list(range(len(plot_df)))
-tick_step = max(1, len(plot_df) // 5)
+st.markdown(f"**📊 {ticker} 실시간 차트 ({timeframe})**")
+
+plot_df = df.tail(55).copy()
+plot_idx = plot_df.index
+plot_df = plot_df.reset_index(drop=True)
+
+fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(7, 7.2), gridspec_kw={'height_ratios': [3.2, 1, 1]}, sharex=True)
+fig.patch.set_facecolor('#131722')
+
+for ax in (ax1, ax2, ax3):
+    ax.set_facecolor('#0B0E14')
