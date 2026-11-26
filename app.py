@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests, json
 
-st.set_page_config(page_title="Global Quant Pro - 30m/1h High WinRate", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Global Quant Pro - Auto WinRate", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""<style>
 .stApp{background:#0B0E14;color:#E2E8F0}header[data-testid="stHeader"]{background:#0B0E14}
 .block-container{padding:2.6rem .8rem 2rem .8rem!important}
@@ -19,34 +19,15 @@ st.markdown("""<style>
 .badge-sell{background:rgba(239,68,68,.18);color:#EF4444;border:1px solid #EF4444;padding:2px 7px;border-radius:6px;font-size:.75rem;font-weight:700;white-space:nowrap}
 .badge-neutral{background:rgba(148,163,184,.15);color:#94A3B8;border:1px solid #475569;padding:2px 7px;border-radius:6px;font-size:.75rem;font-weight:600;white-space:nowrap}
 .tpsl-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:#131722;border:1px solid #334155;border-radius:8px;padding:8px;margin-bottom:8px;text-align:center}
-.opt-box{background:#131722;border:1px solid #10B981;border-radius:8px;padding:10px;margin:6px 0 10px 0}
+.opt-box{background:#131722;border:1px solid #10B981;border-radius:8px;padding:10px;margin:6px 0 10px 0;font-size:.82rem}
 .list-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .list-left{display:flex;align-items:flex-start;gap:7px;flex:1;min-width:0}
 .strat-txt{font-size:.85rem;font-weight:700;color:#F8FAFC;line-height:1.35;word-break:keep-all}
 .price-txt{font-size:.9rem;font-weight:700;color:#F8FAFC;white-space:nowrap}
 .list-sub{display:flex;justify-content:space-between;align-items:center;font-size:.74rem;color:#94A3B8;margin-top:6px}
+div[data-testid="stExpander"]{background:#131722!important;border:1px solid #1E293B!important;border-radius:8px!important}
+div[data-testid="stExpander"] summary p,label p,.stRadio label p,.stCheckbox label p{color:#F8FAFC!important;font-size:.82rem!important}
 </style>""", unsafe_allow_html=True)
-
-with st.expander("⚙️ 글로벌 고승률 30분/1시간봉 설정", expanded=False):
-    ticker = st.text_input("분석 티커 (QQQ, NVDA, TSLA, SPY, AAPL, BTC-USD)", value="QQQ").upper().strip()
-    timeframe = st.radio("최적화 타임프레임", ["30분봉", "1시간봉"], horizontal=True)
-    strategy_filter = st.selectbox("글로벌 검증 알고리즘", [
-        "🏆 최고승률 컨플루언스 (전체 통합)",
-        "1. VWAP+RSI 눌림",
-        "2. EMA 정배열 회귀",
-        "3. MACD+VWAP 반전",
-        "4. 볼린저 하단 반등",
-        "5. ORB 돌파"
-    ])
-    c1, c2, c3 = st.columns(3)
-    hold_bars = c1.slider("최대 보유봉", 3, 24, 10)
-    sl_mult = c2.number_input("손절 ATR", 0.5, 4.0, 1.2, 0.1)
-    tp_mult = c3.number_input("익절 ATR", 1.0, 8.0, 2.5, 0.5)
-    strict_trend = st.checkbox("상위 추세(EMA200) & ADX>20 횡보장 차단 필터", value=True)
-    watchlist_str = st.text_input("글로벌 스캐너 종목", value="QQQ, SPY, NVDA, TSLA, AAPL, MSFT, AMD, META, AMZN, GOOGL")
-    kakao_token = st.text_input("카카오톡 Access Token (선택)", type="password")
-    if st.button("🔄 실시간 데이터 새로고침", use_container_width=True):
-        st.cache_data.clear()
 
 def send_kakao(token, msg):
     if not token: return False, "카카오톡 토큰을 입력해 주세요."
@@ -105,7 +86,6 @@ def load_quant_data(sym, tf, s_filter, trend_on):
         oh, ol = orb_h.get(r['Date_NY'], np.nan), orb_l.get(r['Date_NY'], np.nan)
         if r['Time_NY'] > "09:30" and r['Close'] > oh and pv['Close'] <= oh and r['Volume'] > r['Vol_MA20']*1.4: rb.append("ORB 돌파")
 
-        # 고승률 매도(숏/청산) 시그널
         if r['Close'] < r['VWAP'] and (pv['RSI'] >= 62 or pv2['RSI'] >= 65) and r['Close'] < r['Open']: rs.append("VWAP 저항+RSI 과열")
         if r['EMA20'] < r['EMA50'] and (r['High'] >= r['EMA20']*0.997) and r['Close'] < r['Open']: rs.append("EMA 역배열 저항")
         if r['Close'] < r['VWAP'] and r['MACD_Hist'] < 0 and pv['MACD_Hist'] >= 0: rs.append("MACD+VWAP 하락반전")
@@ -130,18 +110,26 @@ def load_quant_data(sym, tf, s_filter, trend_on):
             if mb: df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(mb)
             if ms and not mb: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(ms)
     return df
+
 def run_bt(df_in, n_bars, tp_m, sl_m):
     trades, c_arr, h_arr, l_arr, a_arr, idx_arr = [], df_in['Close'].to_numpy(float), df_in['High'].to_numpy(float), df_in['Low'].to_numpy(float), df_in['ATR'].to_numpy(float), df_in.index
-    for pos in np.flatnonzero(df_in['Buy_Signal'].to_numpy()):
-        p = int(pos)
-        if p + 1 >= len(df_in): continue
-        ep, av = c_arr[p], a_arr[p]
-        tp_t, sl_t, end_p = ep + av * tp_m, ep - av * sl_m, min(p + n_bars, len(df_in) - 1)
+    b_arr, s_arr = df_in['Buy_Signal'].to_numpy(), df_in['Sell_Signal'].to_numpy()
+    for p in range(len(df_in) - 1):
+        if not (b_arr[p] or s_arr[p]): continue
+        ep, av, end_p = c_arr[p], a_arr[p], min(p + n_bars, len(df_in) - 1)
         xp, xdt = c_arr[end_p], idx_arr[end_p]
-        for s in range(p + 1, end_p + 1):
-            if l_arr[s] <= sl_t: xp, xdt = sl_t, idx_arr[s]; break
-            if h_arr[s] >= tp_t: xp, xdt = tp_t, idx_arr[s]; break
-        trades.append({"date": xdt, "ret": (xp - ep) / ep})
+        if b_arr[p]:
+            tp_t, sl_t = ep + av * tp_m, ep - av * sl_m
+            for s in range(p + 1, end_p + 1):
+                if l_arr[s] <= sl_t: xp, xdt = sl_t, idx_arr[s]; break
+                if h_arr[s] >= tp_t: xp, xdt = tp_t, idx_arr[s]; break
+            trades.append({"date": xdt, "ret": (xp - ep) / ep})
+        else:
+            tp_t, sl_t = ep - av * tp_m, ep + av * sl_m
+            for s in range(p + 1, end_p + 1):
+                if h_arr[s] >= sl_t: xp, xdt = sl_t, idx_arr[s]; break
+                if l_arr[s] <= tp_t: xp, xdt = tp_t, idx_arr[s]; break
+            trades.append({"date": xdt, "ret": (ep - xp) / ep})
     if not trades: return 0, 0.0, 0.0, 0.0, 0.0, pd.DataFrame()
     tdf = pd.DataFrame(trades)
     tdf['eq'] = (1 + tdf['ret']).cumprod()
@@ -149,10 +137,57 @@ def run_bt(df_in, n_bars, tp_m, sl_m):
     tdf['dd'] = ((tdf['eq'] - tdf['eq'].cummax()) / tdf['eq'].cummax()) * 100
     return len(tdf), float((tdf['ret'] > 0).mean()*100), float(tdf['ret'].mean()*100), float(tdf['cum'].iloc[-1]), float(tdf['dd'].min()), tdf
 
+def find_best_params(df_in):
+    best = None
+    for hb in (4, 6, 8, 12, 16, 20):
+        for sm in (0.8, 1.0, 1.2, 1.5, 2.0):
+            for tm in (1.2, 1.5, 2.0, 2.5, 3.0):
+                c, w, a, t, m, _ = run_bt(df_in, hb, tm, sm)
+                if c > 0:
+if "hold_bars" not in st.session_state: st.session_state.hold_bars = 8
+if "sl_mult" not in st.session_state: st.session_state.sl_mult = 1.2
+if "tp_mult" not in st.session_state: st.session_state.tp_mult = 2.0
+
+with st.expander("⚙️ 글로벌 고승률 30분/1시간봉 설정 (티커 입력 시 자동 최적화)", expanded=False):
+    ticker = st.text_input("분석 티커 (입력 시 최고승률 보유봉·ATR 자동 세팅)", value="SOXL").upper().strip()
+    timeframe = st.radio("최적화 타임프레임", ["30분봉", "1시간봉"], horizontal=True)
+    strategy_filter = st.selectbox("글로벌 검증 알고리즘", [
+        "🏆 최고승률 컨플루언스 (전체 통합)",
+        "1. VWAP+RSI 눌림",
+        "2. EMA 정배열 회귀",
+        "3. MACD+VWAP 반전",
+        "4. 볼린저 하단 반등",
+        "5. ORB 돌파"
+    ])
+    strict_trend = st.checkbox("상위 추세(EMA200) & ADX>20 횡보장 차단 필터", value=True)
+
+    df_pre = load_quant_data(ticker, timeframe, strategy_filter, strict_trend)
+    opt_key = f"{ticker}_{timeframe}_{strategy_filter}_{strict_trend}"
+    if df_pre is not None and st.session_state.get("last_opt_key") != opt_key:
+        best_p = find_best_params(df_pre)
+        if best_p:
+            st.session_state.hold_bars = int(best_p["hb"])
+            st.session_state.sl_mult = float(best_p["sl"])
+            st.session_state.tp_mult = float(best_p["tp"])
+            st.session_state.opt_summary = best_p
+        else:
+            st.session_state.opt_summary = None
+        st.session_state.last_opt_key = opt_key
+
+    c1, c2, c3 = st.columns(3)
+    hold_bars = c1.slider("최대 보유봉", 3, 24, key="hold_bars")
+    sl_mult = c2.number_input("손절 ATR", 0.5, 4.0, step=0.1, key="sl_mult")
+    tp_mult = c3.number_input("익절 ATR", 1.0, 8.0, step=0.5, key="tp_mult")
+    watchlist_str = st.text_input("글로벌 스캐너 종목", value="SOXL, TQQQ, QQQ, NVDA, TSLA, AAPL, MSFT, AMD, META")
+    kakao_token = st.text_input("카카오톡 Access Token (선택)", type="password")
+    if st.button("🔄 실시간 데이터 새로고침", use_container_width=True):
+        st.cache_data.clear()
+        st.session_state.last_opt_key = ""
+
 tab1, tab2 = st.tabs(["📊 30분/1시간 매수·매도 분석", "🌍 글로벌 고승률 스캐너"])
 with tab1:
-    df = load_quant_data(ticker, timeframe, strategy_filter, strict_trend)
-    if df is None: st.error(f"'{ticker}' 데이터를 불러올 수 없습니다.")
+    df = df_pre
+    if df is None: st.error(f"'{ticker}' 데이터를 불러올 수 없습니다. 티커명을 확인해 주세요.")
     else:
         last, prev = df.iloc[-1], df.iloc[-2]
         chg_pct = ((float(last['Close']) - float(prev['Close'])) / float(prev['Close'])) * 100
@@ -167,6 +202,11 @@ with tab1:
             st_html = '<span class="badge-neutral">청산/관망</span>'
 
         st.markdown(f"### 📈 {ticker} ({timeframe}) {st_html}", unsafe_allow_html=True)
+
+        opt_info = st.session_state.get("opt_summary")
+        if opt_info:
+            st.markdown(f'<div class="opt-box"><strong style="color:#10B981;">✨ [{ticker} {timeframe}] AI 최고승률 자동 세팅 적용됨</strong><br>최적 설정: <strong>최대 {opt_info["hb"]}봉 보유</strong> · 손절 <strong>{opt_info["sl"]} ATR</strong> · 익절 <strong>{opt_info["tp"]} ATR</strong> (최고승률 <strong>{opt_info["win"]:.1f}%</strong>)</div>', unsafe_allow_html=True)
+
         cnt, win, avg, tot, mdd, tdf = run_bt(df, hold_bars, tp_mult, sl_mult)
         st.markdown(f"""<div class="kpi-grid">
         <div class="metric-card"><div class="metric-title">현재가 (USD)</div><div class="metric-value">${last['Close']:,.2f} ({chg_pct:+.2f}%)</div></div>
@@ -178,19 +218,6 @@ with tab1:
         <div><div class="ohlc-lbl">🛡️ 손절가</div><div class="ohlc-val" style="color:#EF4444;">${sl_p:,.2f}</div></div>
         <div><div class="ohlc-lbl">⚖️ 손익비(R:R)</div><div class="ohlc-val" style="color:#F59E0B;">1 : {tp_mult/sl_mult:.2f}</div></div>
         </div>""", unsafe_allow_html=True)
-
-        if st.button(f"✨ {ticker} ({timeframe}) 최고승률 손절/익절 자동 탐색", use_container_width=True):
-            opts = []
-            for sm in (1.0, 1.2, 1.5, 2.0):
-                for tm in (2.0, 2.5, 3.0, 4.0):
-                    if tm > sm:
-                        c, w, a, t, m, _ = run_bt(df, hold_bars, tm, sm)
-                        if c > 0: opts.append((w*0.5 + t*0.5 - abs(m)*0.3, sm, tm, w, t, m))
-            if opts:
-                opts.sort(reverse=True)
-                _, b_sl, b_tp, b_w, b_t, b_m = opts.pop(0)
-                st.markdown(f'<div class="opt-box"><strong style="color:#10B981;">🏆 AI 추천 최적 비율: 손절 {b_sl} ATR / 익절 {b_tp} ATR</strong><br>승률 {b_w:.1f}% | 누적수익 {b_t:+.2f}% | MDD {b_m:.2f}%</div>', unsafe_allow_html=True)
-            else: st.warning("탐색할 매수 이력이 부족합니다.")
 
         pdf = df.tail(80)
         xl = pdf.index.tz_convert('America/New_York').strftime('%m-%d %H:%M').tolist()
@@ -211,62 +238,41 @@ with tab1:
         st.plotly_chart(fig, use_container_width=True)
 
         if st.button("💛 카톡으로 현재 분석 전송", use_container_width=True):
-            ok, m = send_kakao(kakao_token, f"[{ticker} {timeframe}] ${last['Close']:,.2f} ({chg_pct:+.2f}%)\n신호: {last['Signal_Reason'] or '청산/관망'}\n목표: ${tp_p:,.2f} / 손절: ${sl_p:,.2f}")
+            ok, m = send_kakao(kakao_token, f"[{ticker} {timeframe}] ${last['Close']:,.2f} ({chg_pct:+.2f}%)\n최적보유:{hold_bars}봉 | 승률:{win:.1f}%\n신호: {last['Signal_Reason'] or '청산/관망'}\n목표: ${tp_p:,.2f} / 손절: ${sl_p:,.2f}")
             st.toast(m)
 
         st.markdown("#### 🔔 최근 매수·매도 시그널 타임라인")
-        recent_bars = df.tail(18).iloc[::-1]
-        for idx, row in recent_bars.iterrows():
+        for idx, row in df.tail(18).iloc[::-1].iterrows():
             ny_str = idx.tz_convert('America/New_York').strftime('%m-%d %H:%M (NY)')
-            price_v = float(row['Close'])
-            atr_v = float(row['ATR'])
+            price_v, atr_v = float(row['Close']), float(row['ATR'])
             if row['Buy_Signal']:
                 t_p, s_p = price_v + atr_v * tp_mult, price_v - atr_v * sl_mult
-                st.markdown(f"""<div class="list-card">
-                <div class="list-top">
-                    <div class="list-left"><span class="badge-buy">🟢 매수</span><span class="strat-txt">{row['Signal_Reason']}</span></div>
-                    <span class="price-txt">${price_v:,.2f}</span>
-                </div>
-                <div class="list-sub">
-                    <span>🕒 {ny_str}</span>
-                    <span>목표 <strong style="color:#EF4444;">${t_p:,.2f}</strong> · 손절 <strong style="color:#3B82F6;">${s_p:,.2f}</strong></span>
-                </div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="list-card"><div class="list-top"><div class="list-left"><span class="badge-buy">🟢 매수</span><span class="strat-txt">{row['Signal_Reason']}</span></div><span class="price-txt">${price_v:,.2f}</span></div><div class="list-sub"><span>🕒 {ny_str}</span><span>목표 <strong style="color:#EF4444;">${t_p:,.2f}</strong> · 손절 <strong style="color:#3B82F6;">${s_p:,.2f}</strong></span></div></div>""", unsafe_allow_html=True)
             elif row['Sell_Signal']:
                 t_p, s_p = price_v - atr_v * tp_mult, price_v + atr_v * sl_mult
-                st.markdown(f"""<div class="list-card">
-                <div class="list-top">
-                    <div class="list-left"><span class="badge-sell">🔴 매도</span><span class="strat-txt">{row['Signal_Reason']}</span></div>
-                    <span class="price-txt">${price_v:,.2f}</span>
-                </div>
-                <div class="list-sub">
-                    <span>🕒 {ny_str}</span>
-                    <span>목표 <strong style="color:#3B82F6;">${t_p:,.2f}</strong> · 손절 <strong style="color:#EF4444;">${s_p:,.2f}</strong></span>
-                </div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="list-card"><div class="list-top"><div class="list-left"><span class="badge-sell">🔴 매도</span><span class="strat-txt">{row['Signal_Reason']}</span></div><span class="price-txt">${price_v:,.2f}</span></div><div class="list-sub"><span>🕒 {ny_str}</span><span>목표 <strong style="color:#3B82F6;">${t_p:,.2f}</strong> · 손절 <strong style="color:#EF4444;">${s_p:,.2f}</strong></span></div></div>""", unsafe_allow_html=True)
             else:
-                st.markdown(f"""<div class="list-card" style="padding:7px 12px; opacity:0.75;">
-                <div class="list-sub" style="margin-top:0;">
-                    <span>🕒 {ny_str}</span>
-                    <span>청산/관망</span>
-                </div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="list-card" style="padding:7px 12px; opacity:0.75;"><div class="list-sub" style="margin-top:0;"><span>🕒 {ny_str}</span><span>청산/관망</span></div></div>""", unsafe_allow_html=True)
 
 with tab2:
     syms = [s.strip().upper() for s in watchlist_str.split(",") if s.strip()]
-    if st.button("🚀 30분봉 + 1시간봉 매수·매도 동시 스캔", use_container_width=True):
+    if st.button("🚀 30분봉 + 1시간봉 종목별 최고승률 자동 스캔", use_container_width=True):
         scan_list = []
-        bar = st.progress(0, text="글로벌 실시간 데이터 분석 시작...")
+        bar = st.progress(0, text="종목별 최고승률 파라미터 탐색 및 스캔 중...")
         for idx_s, s in enumerate(syms):
-            bar.progress((idx_s + 1) / max(len(syms), 1), text=f"🔍 {s} (30분봉·1시간봉) 분석 중... ({idx_s+1}/{len(syms)})")
+            bar.progress((idx_s + 1) / max(len(syms), 1), text=f"🔍 {s} 최고승률 시뮬레이션 중... ({idx_s+1}/{len(syms)})")
             d30 = load_quant_data(s, "30분봉", strategy_filter, strict_trend)
             d60 = load_quant_data(s, "1시간봉", strategy_filter, strict_trend)
             if d30 is not None and d60 is not None and len(d30) >= 2:
                 sl, sp = d30.iloc[-1], d30.iloc[-2]
                 cp = ((float(sl['Close']) - float(sp['Close'])) / float(sp['Close'])) * 100
-                r30, r60 = d30.tail(3), d60.tail(3)
+                bp60 = find_best_params(d60)
+                w60 = bp60["win"] if bp60 else 0.0
+                hb60 = bp60["hb"] if bp60 else hold_bars
+                s_tp_m = bp60["tp"] if bp60 else tp_mult
+                s_sl_m = bp60["sl"] if bp60 else sl_mult
                 sig_type, sig_txt = "NEUTRAL", "청산/관망"
-                tp_v, sl_v = float(sl['Close']) + float(sl['ATR']) * tp_mult, float(sl['Close']) - float(sl['ATR']) * sl_mult
-                for sub_df, lbl in [(r30, "30m"), (r60, "1h")]:
+                tp_v, sl_v = float(sl['Close']) + float(sl['ATR']) * s_tp_m, float(sl['Close']) - float(sl['ATR']) * s_sl_m
+                for sub_df, lbl in [(d30.tail(3), "30m"), (d60.tail(3), "1h")]:
                     sig_rows = sub_df[sub_df['Buy_Signal'] | sub_df['Sell_Signal']]
                     if not sig_rows.empty:
-                        sr = sig_rows.iloc[-1]
-                        if sr['Buy_Signal']:
-                            sig_type, sig_txt = "BUY", f"{lbl} · {sr['Signal_Reason']}"
