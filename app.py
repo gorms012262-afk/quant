@@ -16,12 +16,13 @@ header[data-testid="stHeader"] { background-color:#0B0E14; }
 .ohlc-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; background-color:#131722; border:1px solid #1E293B; border-radius:8px; padding:7px 6px; margin-bottom:8px; text-align:center; }
 .ohlc-lbl { font-size:0.68rem; color:#64748B; margin-bottom:1px; }
 .ohlc-val { font-size:0.82rem; font-weight:700; color:#F8FAFC; }
-div[data-testid="stExpander"] { background-color:#131722!important; border:1px solid #1E293B!important; border-radius:8px!important; }
-div[data-testid="stExpander"] summary p { color:#E2E8F0!important; font-size:0.82rem!important; font-weight:600!important; }
+div[data-testid="stExpander"], div[data-testid="stExpander"] details, div[data-testid="stExpander"] summary { background-color:#131722!important; color:#F8FAFC!important; border-radius:8px!important; }
+div[data-testid="stExpander"] { border:1px solid #1E293B!important; }
+div[data-testid="stExpander"] summary p, div[data-testid="stExpander"] summary svg { color:#F8FAFC!important; fill:#F8FAFC!important; font-size:0.82rem!important; font-weight:600!important; }
 div[data-baseweb="input"]>div, div[data-baseweb="select"]>div { background-color:#F8FAFC!important; color:#0B0E14!important; border-radius:8px!important; }
 div[data-baseweb="input"] input { color:#0B0E14!important; font-weight:600!important; }
 label p, .stRadio label p, button[data-baseweb="tab"] p { color:#E2E8F0!important; font-size:0.82rem!important; }
-.stButton>button { background-color:#1E293B!important; color:#F8FAFC!important; border:1px solid #334155!important; border-radius:8px!important; }
+.stButton>button { background-color:#1E293B!important; color:#F8FAFC!important; border:1px solid #334155!important; border-radius:8px!important; font-size:0.8rem!important; }
 </style>""", unsafe_allow_html=True)
 
 with st.expander("⚙️ 종목 / 봉 기준 / 전략 설정 (눌러서 열기)", expanded=False):
@@ -171,7 +172,17 @@ with tab1:
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
 
 with tab2:
-    watch_input = st.text_input("관심 종목 목록 (쉼표로 구분)", value="QQQ, NVDA, TSLA, AAPL, MSFT, AMD, META, AMZN")
+    if 'watch_list' not in st.session_state:
+        st.session_state.watch_list = "SOXL, TQQQ, NVDL, TSLL, QQQ, NVDA, TSLA"
+    c1, c2, c3 = st.columns(3)
+    if c1.button("🔥 3배 레버리지", use_container_width=True):
+        st.session_state.watch_list = "SOXL, TQQQ, NVDL, TSLL, SQQQ"
+    if c2.button("💻 빅테크 주도주", use_container_width=True):
+        st.session_state.watch_list = "NVDA, TSLA, AAPL, MSFT, META, AMZN"
+    if c3.button("📈 대표 지수 ETF", use_container_width=True):
+        st.session_state.watch_list = "QQQ, SPY, IWM, DIA"
+
+    watch_input = st.text_input("관심 종목 목록 (쉼표로 구분)", key="watch_list")
     if st.button("🔍 전체 종목 실시간 신호 스캔", use_container_width=True):
         symbols = [s.strip().upper() for s in watch_input.split(",") if s.strip()]
         scan_rows = []
@@ -180,7 +191,3 @@ with tab2:
                 sdf = load_data(sym, timeframe, strategy_filter)
                 if sdf is None: continue
                 lr = sdf.iloc[-1]
-                recent_sig = sdf[sdf['Buy_Signal'] | sdf['Sell_Signal']]
-                last_dt = recent_sig.index[-1].tz_convert('America/New_York').strftime('%m-%d %H:%M') if not recent_sig.empty else "-"
-                last_rsn = recent_sig.iloc[-1]['Signal_Reason'] if not recent_sig.empty else "신호없음"
-                is_b = recent_sig.iloc[-1]['Buy_Signal'] if not recent_sig.empty else False
