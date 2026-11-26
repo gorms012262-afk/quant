@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests, json
 
-st.set_page_config(page_title="Global Quant Pro - Auto WinRate", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Global Quant Pro - Strong Signals Only", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""<style>
 .stApp{background:#0B0E14;color:#E2E8F0}header[data-testid="stHeader"]{background:#0B0E14}
 .block-container{padding:2.6rem .8rem 2rem .8rem!important}
@@ -103,7 +103,7 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
         idx, r, pv, pv2 = df.index[i], df.iloc[i], df.iloc[i-1], df.iloc[i-2]
         rb, rs = list(), list()
 
-        # 매수(BUY) 조건
+        # 매수(BUY) 조건 체크
         if r['Close'] > r['VWAP'] and (pv['RSI'] <= rsi_buy_1 or pv2['RSI'] <= rsi_buy_2) and r['Close'] > r['Open']:
             rb.append("VWAP+RSI 눌림")
         if r['EMA20'] > r['EMA50'] and r['ST_Up'] and (r['Low'] <= r['EMA20']*1.003) and r['Close'] > r['Open']:
@@ -116,7 +116,7 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
         if r['Time_Loc'] > open_time and r['Close'] > oh and pv['Close'] <= oh and r['Volume'] > r['Vol_MA20']*vol_orb_b:
             rb.append("ORB 돌파")
 
-        # 매도(SELL) 조건 (V자 강반등 숏 함정 방지: EMA20 기울기 상승중이거나 ST_Up(슈퍼트렌드 상승전환)이면 숏 금지)
+        # 매도(SELL) 조건 체크 (V자 강반등 숏 함정 방지 포함)
         v_rebound_guard = (r['EMA20'] > pv['EMA20']) or bool(r['ST_Up']) or (r['Close'] > r['VWAP'])
         if not long_only and not v_rebound_guard:
             if r['Close'] < r['VWAP'] and (pv['RSI'] >= rsi_sell_1 or pv2['RSI'] >= rsi_sell_2) and r['Close'] < r['Open']:
@@ -134,19 +134,18 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
             if not (r['Close'] > r['EMA200'] and r['ADX'] >= adx_min and r['RSI'] < 68.0): rb = list()
             if not (r['Close'] < r['EMA200'] and r['ADX'] >= adx_min and r['RSI'] > 32.0): rs = list()
 
+        # 강력매수 / 강력매도(2개 이상 동시 충족)만 시그널로 채택
         if s_filter.startswith("🏆"):
-            if rb:
-                tag = "★강력매수: " if len(rb) >= 2 else ""
-                df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, tag + ", ".join(rb)
-            if rs and not df.at[idx, 'Buy_Signal']:
-                tag = "★강력매도: " if len(rs) >= 2 else ""
-                df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, tag + ", ".join(rs)
+            if len(rb) >= 2:
+                df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, "★강력매수: " + ", ".join(rb)
+            if len(rs) >= 2 and not df.at[idx, 'Buy_Signal']:
+                df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, "★강력매도: " + ", ".join(rs)
         else:
             key = s_filter.split(".").pop().strip()
-            mb = tuple(x for x in rb if key in x)
-            ms = tuple(x for x in rs if key in x)
-            if mb: df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(mb)
-            if ms and not mb: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(ms)
+            if len(rb) >= 2 and any(key in x for x in rb):
+                df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, "★강력매수: " + ", ".join(rb)
+            if len(rs) >= 2 and any(key in x for x in rs) and not df.at[idx, 'Buy_Signal']:
+                df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, "★강력매도: " + ", ".join(rs)
     return df
 
 def run_bt(df_in, n_bars, tp_m, sl_m, no_overlap=True):
@@ -194,7 +193,7 @@ def calc_bt_metrics(bt_df):
     peak = cum_curve.cummax()
     mdd = ((cum_curve - peak) / peak * 100).min()
     return win_rate, tot_pnl, pf, mdd
-st.markdown("#### ⚡ Global Quant Pro")
+st.markdown("#### ⚡ Global Quant Pro (강력신호 전용)")
 
 with st.expander("⚙️ 종목 · 분봉 · 전략 설정", expanded=True):
     c1, c2 = st.columns((1.2, 1.8))
@@ -203,20 +202,20 @@ with st.expander("⚙️ 종목 · 분봉 · 전략 설정", expanded=True):
 
     watchlist_raw = st.text_input("📋 워치리스트 (쉼표 구분)", value="NVDA, TSLA, AAPL, QQQ, 005930.KS")
 
-    s_filter = st.selectbox("전략 필터", (
-        "🏆 전체 복합 전략 (강력신호 우선)",
-        "1. VWAP+RSI",
-        "2. EMA",
-        "3. MACD+VWAP",
-        "4. 볼린저",
-        "5. ORB"
+    s_filter = st.selectbox("강력신호 포함 전략 필터", (
+        "🏆 전체 강력신호 (2개 이상 전략 중첩)",
+        "1. VWAP+RSI 포함 강력신호",
+        "2. EMA 포함 강력신호",
+        "3. MACD+VWAP 포함 강력신호",
+        "4. 볼린저 포함 강력신호",
+        "5. ORB 포함 강력신호"
     ))
     c3, c4 = st.columns(2)
     trend_on = c3.checkbox("EMA200 + ADX 추세필터", value=True)
     auto_opt = c4.checkbox("승률 최적화 자동 탐색", value=True)
 
     c5, c6 = st.columns(2)
-    long_only = c5.checkbox("현물 전용 (BUY만 보기)", value=False)
+    long_only = c5.checkbox("현물 전용 (★강력매수만 보기)", value=False)
     no_overlap = c6.checkbox("포지션 중 중복신호 차단", value=True)
 
     default_bars = 16 if tf == "15분봉" else (12 if tf == "30분봉" else 8)
@@ -252,15 +251,15 @@ with tab1:
             for tm in tp_opts:
                 for sm in sl_opts:
                     tmp = run_bt(df, nb, tm, sm, no_overlap)
-                    if len(tmp) >= 5:
+                    if len(tmp) >= 2:
                         wr = (tmp['pnl'] > 0).mean() * 100
                         if wr > best_wr:
                             best_wr, best_cfg = wr, (nb, tm, sm)
         n_bars, tp_m, sl_m = best_cfg
         if best_wr >= 0:
-            st.markdown(f"<div class='opt-box'>🎯 <b>{tf} 자동 최적화 완료:</b> 보유 {n_bars}봉 | 익절 {tp_m} ATR | 손절 {sl_m} ATR (최고 승률 {best_wr:.1f}%)</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='opt-box'>🎯 <b>{tf} 강력신호 최적화 완료:</b> 보유 {n_bars}봉 | 익절 {tp_m} ATR | 손절 {sl_m} ATR (최고 승률 {best_wr:.1f}%)</div>", unsafe_allow_html=True)
         else:
-            st.warning("유효 표본(5건 이상)이 부족해 기본 설정값을 유지합니다.")
+            st.warning("강력신호 표본(2건 이상)이 부족해 기본 설정값을 유지합니다.")
 
     bt = run_bt(df, n_bars, tp_m, sl_m, no_overlap)
     last = df.iloc[-1]
@@ -269,7 +268,7 @@ with tab1:
     st.markdown(f"""
     <div class='kpi-grid'>
       <div class='metric-card'><div class='metric-title'>{sym} 현재가 ({tf})</div><div class='metric-value'>{cur_fmt.format(last['Close'])}</div></div>
-      <div class='metric-card'><div class='metric-title'>백테스트 승률 ({len(bt)}건)</div><div class='metric-value'>{win_rate:.1f}% <span style='font-size:.75rem;color:#94A3B8'>(누적 {tot_pnl:+.1f}%)</span></div></div>
+      <div class='metric-card'><div class='metric-title'>강력신호 승률 ({len(bt)}건)</div><div class='metric-value'>{win_rate:.1f}% <span style='font-size:.75rem;color:#94A3B8'>(누적 {tot_pnl:+.1f}%)</span></div></div>
       <div class='metric-card'><div class='metric-title'>손익비 (Profit Factor)</div><div class='metric-value' style='color:{"#10B981" if pf >= 1.5 else "#F8FAFC"}'>{pf:.2f}</div></div>
       <div class='metric-card'><div class='metric-title'>최대 낙폭 (MDD)</div><div class='metric-value' style='color:#EF4444'>{mdd:.2f}%</div></div>
     </div>
@@ -293,15 +292,15 @@ with tab1:
 
     buys = plot_df.loc[plot_df['Buy_Signal']]
     sells = plot_df.loc[plot_df['Sell_Signal']]
-    fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.996, mode='markers', marker=dict(symbol='triangle-up', size=11, color='#10B981'), name="매수신호"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.004, mode='markers', marker=dict(symbol='triangle-down', size=11, color='#EF4444'), name="매도신호"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.996, mode='markers', marker=dict(symbol='triangle-up', size=12, color='#10B981'), name="강력매수"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.004, mode='markers', marker=dict(symbol='triangle-down', size=12, color='#EF4444'), name="강력매도"), row=1, col=1)
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['RSI'], line=dict(color='#A855F7', width=1.2), name="RSI"), row=2, col=1)
     fig.update_layout(height=420, margin=dict(l=5, r=5, t=10, b=10), paper_bgcolor='#0B0E14', plot_bgcolor='#131722', font=dict(color='#E2E8F0'), xaxis_rangeslider_visible=False, showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("##### 📌 최근 발생 시그널 내역")
+    st.markdown("##### 📌 최근 발생 강력시그널 내역")
     if bt.empty:
-        st.info("선택한 조건에서 발생한 최근 시그널이 없습니다.")
+        st.info("선택한 조건에서 발생한 최근 강력시그널(★)이 없습니다.")
     else:
         recent = bt.iloc[::-1].head(10)
         for _, row in recent.iterrows():
@@ -321,14 +320,14 @@ with tab1:
             </div>
             """, unsafe_allow_html=True)
 
-        if st.button("📲 최신 시그널 카카오톡 전송"):
+        if st.button("📲 최신 강력시그널 카카오톡 전송"):
             latest_sig = recent.head(1).squeeze()
-            msg = f"[{sym} {tf} 시그널]\n유형: {latest_sig['side']}\n전략: {latest_sig['reason']}\n진입가: {cur_fmt.format(latest_sig['entry'])}"
+            msg = f"[{sym} {tf} 강력시그널]\n유형: {latest_sig['side']}\n전략: {latest_sig['reason']}\n진입가: {cur_fmt.format(latest_sig['entry'])}"
             ok, info = send_kakao(kakao_token, msg)
             st.success(info) if ok else st.warning(info)
 
 with tab2:
-    st.markdown(f"##### 🔍 워치리스트 일괄 스캔 ({tf} 기준)")
+    st.markdown(f"##### 🔍 워치리스트 강력시그널 일괄 스캔 ({tf} 기준)")
     tickers = tuple(t.strip().upper() for t in watchlist_raw.split(",") if t.strip())
     if not tickers:
         st.warning("워치리스트에 최소 1개 이상의 티커를 입력해 주세요.")
@@ -350,10 +349,10 @@ with tab2:
                 is_b = bool(last_sig['Buy_Signal'])
                 badge = "<span class='badge-buy'>BUY</span>" if is_b else "<span class='badge-sell'>SELL</span>"
                 rsn_txt = f"{last_sig['Signal_Reason']} ({last_sig.name.tz_convert('Asia/Seoul').strftime('%H:%M KST')})"
-                scan_msgs.append(f"• {tk}: {'매수' if is_b else '매도'} - {last_sig['Signal_Reason']}")
+                scan_msgs.append(f"• {tk}: {last_sig['Signal_Reason']}")
             else:
                 badge = "<span class='badge-neutral'>관망</span>"
-                rsn_txt = f"최근 3봉 시그널 없음 (RSI {w_last['RSI']:.1f})"
+                rsn_txt = f"최근 3봉 강력시그널 없음 (RSI {w_last['RSI']:.1f})"
 
             st.markdown(f"""
             <div class='list-card'>
@@ -368,7 +367,7 @@ with tab2:
             </div>
             """, unsafe_allow_html=True)
 
-        if scan_msgs and st.button("📲 워치리스트 포착 시그널 일괄 카톡 전송"):
-            full_msg = f"[워치리스트 {tf} 스캔 요약]\n" + "\n".join(scan_msgs)
+        if scan_msgs and st.button("📲 워치리스트 포착 강력시그널 일괄 카톡 전송"):
+            full_msg = f"[워치리스트 {tf} 강력시그널 요약]\n" + "\n".join(scan_msgs)
             ok, info = send_kakao(kakao_token, full_msg)
             st.success(info) if ok else st.warning(info)
