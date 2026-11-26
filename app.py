@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import altair as alt
 
 st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
@@ -26,9 +27,6 @@ def load_data(symbol, tf):
     df_ny = df.tz_convert('America/New_York')
     df['Date_NY'] = df_ny.index.date
     df['Time_NY'] = df_ny.index.strftime('%H:%M')
-    df['MA5'] = df['Close'].rolling(5).mean()
-    df['MA20'] = df['Close'].rolling(20).mean()
-    df['MA60'] = df['Close'].rolling(60).mean()
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
     df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
@@ -122,14 +120,42 @@ elif latest['Sell_Signal']:
 elif not b_df.empty:
     st.info(f"📌 최근 매수 시그널 ({b_df.index[-1].strftime('%m-%d %H:%M')}): {b_df.iloc[-1]['Signal_Reason']}")
 
-st.subheader(f"📈 {ticker} 실시간 주가 & 이평선 ({timeframe})")
-chart_df = df[['Close', 'MA5', 'MA20', 'MA60']].tail(60)
-st.line_chart(chart_df, height=260, use_container_width=True)
+st.subheader(f"🕯️ {ticker} 실시간 캔들 차트 ({timeframe})")
+
+pdf = df.tail(50).copy()
+fmt = '%m/%d' if timeframe == "일봉" else '%m/%d %H:%M'
+pdf['DateStr'] = pdf.index.strftime(fmt)
+pdf['Color'] = np.where(pdf['Close'] >= pdf['Open'], '#EF4444', '#3B82F6')
+
+y_min = float(pdf['Low'].min()) * 0.998
+y_max = float(pdf['High'].max()) * 1.002
+y_dom = list((y_min, y_max))
+
+base = alt.Chart(pdf).encode(
+    x=alt.X('DateStr:N', sort=None, axis=alt.Axis(title=None, labelAngle=0, labelOverlap=True))
+)
+
+wick = base.mark_rule(size=1.5).encode(
+    y=alt.Y('Low:Q', scale=alt.Scale(domain=y_dom), axis=alt.Axis(orient='right', title=None)),
+    y2='High:Q',
+    color=alt.Color('Color:N', scale=None)
+)
+
+body = base.mark_bar(size=5).encode(
+    y='Open:Q',
+    y2='Close:Q',
+    color=alt.Color('Color:N', scale=None),
+    tooltip=list(('DateStr:N', 'Open:Q', 'High:Q', 'Low:Q', 'Close:Q', 'Volume:Q'))
+)
+
+candle_chart = (wick + body).properties(height=300)
+st.altair_chart(candle_chart, use_container_width=True)
 
 st.subheader("📊 거래량 (Volume)")
-vol_df = df[['Volume']].tail(60)
-st.bar_chart(vol_df, height=130, use_container_width=True)
+vol_chart = alt.Chart(pdf).mark_bar(size=5).encode(
+    x=alt.X('DateStr:N', sort=None, axis=alt.Axis(title=None, labelAngle=0, labelOverlap=True)),
+    y=alt.Y('Volume:Q', axis=alt.Axis(orient='right', title=None, format='~s')),
+    color=alt.Color('Color:N', scale=None)
+).properties(height=120)
 
-st.subheader("📉 RSI (14)")
-rsi_df = df[['RSI']].tail(60)
-st.line_chart(rsi_df, height=130, use_container_width=True)
+st.altair_chart(vol_chart, use_container_width=True)
