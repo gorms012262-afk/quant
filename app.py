@@ -34,6 +34,7 @@ with st.expander("⚙️ 종목 / 봉 기준 설정 (눌러서 열기)", expande
     timeframe = st.radio("봉 기준", ["30분봉", "1시간봉", "일봉"], horizontal=True)
     strategy_filter = st.selectbox("전략 필터", ["전체 전략 통합 (고승률 엄선)"], label_visibility="collapsed")
     if st.button("🔄 데이터 새로고침", use_container_width=True): st.cache_data.clear()
+
 @st.cache_data(ttl=60)
 def load_single(symbol, tf, strat_filter):
     p, iv = ("1mo", "30m") if tf == "30분봉" else (("3mo", "1h") if tf == "1시간봉" else ("2y", "1d"))
@@ -85,7 +86,7 @@ def load_single(symbol, tf, strat_filter):
             if rs: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rs)
     return df
 def render_tv_chart(df_in, tf):
-    pdf = df_in.tail(75).copy()
+    pdf = df_in.tail(120).copy()
     ny_idx = pdf.index.tz_convert('America/New_York')
     x_lbl = ny_idx.strftime('%m-%d %H:%M') if tf != "일봉" else ny_idx.strftime('%Y-%m-%d')
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.78, 0.22])
@@ -101,10 +102,11 @@ def render_tv_chart(df_in, tf):
         sx = s_sub.index.tz_convert('America/New_York').strftime('%m-%d %H:%M') if tf != "일봉" else s_sub.index.tz_convert('America/New_York').strftime('%Y-%m-%d')
         fig.add_trace(go.Scatter(x=sx, y=s_sub['High']*1.004, mode='markers', marker=dict(symbol='triangle-down', size=11, color='#EF4444'), name='매도'), row=1, col=1)
     fig.add_trace(go.Bar(x=x_lbl, y=pdf['Volume'], marker_color=['#EF4444' if c >= o else '#3B82F6' for c, o in zip(pdf['Close'], pdf['Open'])], opacity=0.6, name='거래량'), row=2, col=1)
-    fig.update_layout(paper_bgcolor='#131722', plot_bgcolor='#131722', font=dict(color='#94A3B8', size=10), margin=dict(l=8, r=42, t=28, b=18), height=410, xaxis_rangeslider_visible=False, legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0, font=dict(size=10)), hovermode='x unified')
+    fig.update_layout(paper_bgcolor='#131722', plot_bgcolor='#131722', font=dict(color='#94A3B8', size=10), margin=dict(l=8, r=42, t=34, b=18), height=420, dragmode='pan', xaxis_rangeslider_visible=False, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=10)), hovermode='closest')
     fig.update_xaxes(showgrid=True, gridcolor='#1E293B', nticks=6)
-    fig.update_yaxes(showgrid=True, gridcolor='#1E293B', side='right')
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+    fig.update_yaxes(showgrid=True, gridcolor='#1E293B', side='right', fixedrange=False)
+    cfg = {'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToRemove': ['select2d', 'lasso2d', 'autoScale2d', 'toImage']}
+    st.plotly_chart(fig, use_container_width=True, config=cfg)
 
 tab1, tab2 = st.tabs(["📊 종목 차트 분석", "📡 관심 종목 스캐너"])
 
