@@ -65,14 +65,12 @@ def load_quant_data(sym, tf, s_filter, trend_on):
     ny = df.tz_convert('America/New_York')
     df['Date_NY'], df['Time_NY'] = ny.index.date, ny.index.strftime('%H:%M')
 
-    # 핵심 추세 및 모멘텀 지표
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
     df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
     d = df['Close'].diff()
     df['RSI'] = 100 - (100 / (1 + d.where(d > 0, 0).rolling(14).mean() / (-d.where(d < 0, 0)).rolling(14).mean().replace(0, np.nan)))
 
-    # ATR 및 ADX 추세 강도
     hd, ld = df['High'].diff(), -df['Low'].diff()
     pdm, mdm = hd.where((hd > ld) & (hd > 0), 0.0), ld.where((ld > hd) & (ld > 0), 0.0)
     df['TR'] = pd.concat([df['High'] - df['Low'], (df['High'] - df['Close'].shift(1)).abs(), (df['Low'] - df['Close'].shift(1)).abs()], axis=1).max(axis=1)
@@ -81,7 +79,6 @@ def load_quant_data(sym, tf, s_filter, trend_on):
     pdi, mdi = 100 * (pdm.ewm(alpha=1/14, adjust=False).mean() / atrs), 100 * (mdm.ewm(alpha=1/14, adjust=False).mean() / atrs)
     df['ADX'] = (100 * (pdi - mdi).abs() / (pdi + mdi).replace(0, np.nan)).fillna(0).ewm(alpha=1/14, adjust=False).mean()
 
-    # MACD, 볼린저밴드, 기관 VWAP, SuperTrend(단순화)
     macd = df['Close'].ewm(span=12, adjust=False).mean() - df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD_Hist'] = macd - macd.ewm(span=9, adjust=False).mean()
     df['BB_Low'] = df['Close'].rolling(20).mean() - 2.0 * df['Close'].rolling(20).std()
@@ -97,12 +94,12 @@ def load_quant_data(sym, tf, s_filter, trend_on):
     for i in range(2, len(df)):
         idx, r, pv, pv2 = df.index[i], df.iloc[i], df.iloc[i-1], df.iloc[i-2]
         rb, rs = [], []
-        if r['Close'] > r['VWAP'] and (pv['RSI'] <= 43 or pv2['RSI'] <= 41) and r['Close'] > r['Open']: rb.append("VWAP기관눌림")
-        if r['EMA20'] > r['EMA50'] and r['ST_Up'] and (r['Low'] <= r['EMA20']*1.003) and r['Close'] > r['Open']: rb.append("EMA+ST반등")
-        if r['Close'] > r['VWAP'] and r['MACD_Hist'] > 0 and pv['MACD_Hist'] <= 0 and r['Volume'] > r['Vol_MA20']*1.2: rb.append("MACD수급돌파")
-        if (pv['Low'] <= pv['BB_Low'] or r['Low'] <= r['BB_Low']) and r['Close'] > r['BB_Low'] and r['Close'] > r['Open'] and r['RSI'] < 48: rb.append("BB하단복귀")
+        if r['Close'] > r['VWAP'] and (pv['RSI'] <= 43 or pv2['RSI'] <= 41) and r['Close'] > r['Open']: rb.append("1.VWAP기관눌림")
+        if r['EMA20'] > r['EMA50'] and r['ST_Up'] and (r['Low'] <= r['EMA20']*1.003) and r['Close'] > r['Open']: rb.append("2.EMA+ST반등")
+        if r['Close'] > r['VWAP'] and r['MACD_Hist'] > 0 and pv['MACD_Hist'] <= 0 and r['Volume'] > r['Vol_MA20']*1.2: rb.append("3.MACD수급돌파")
+        if (pv['Low'] <= pv['BB_Low'] or r['Low'] <= r['BB_Low']) and r['Close'] > r['BB_Low'] and r['Close'] > r['Open'] and r['RSI'] < 48: rb.append("4.BB하단복귀")
         oh = orb_h.get(r['Date_NY'], np.nan)
-        if r['Time_NY'] > "09:30" and r['Close'] > oh and pv['Close'] <= oh and r['Volume'] > r['Vol_MA20']*1.4: rb.append("ORB돌파")
+        if r['Time_NY'] > "09:30" and r['Close'] > oh and pv['Close'] <= oh and r['Volume'] > r['Vol_MA20']*1.4: rb.append("5.ORB돌파")
 
         if r['Close'] < r['VWAP'] and r['Close'] < r['EMA20'] and pv['Close'] >= pv['VWAP'] and r['RSI'] > 32: rs.append("VWAP이탈매도")
 
@@ -112,8 +109,8 @@ def load_quant_data(sym, tf, s_filter, trend_on):
                 df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, "★고승률매수: " + "+".join(rb)
             if rs: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, "매도경고: " + "+".join(rs)
         else:
-            key = s_filter.split(".")[1].strip()[:4]
-            matched = [x for x in rb if key[:2] in x]
+            prefix = s_filter.split(".").pop(0).strip() + "."
+            matched = [x for x in rb if x.startswith(prefix)]
             if matched: df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, "매수: " + "+".join(matched)
             if rs: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, "매도: " + "+".join(rs)
     return df
@@ -166,7 +163,7 @@ with tab1:
                         if c > 0: opts.append((w*0.5 + t*0.5 - abs(m)*0.3, sm, tm, w, t, m))
             if opts:
                 opts.sort(reverse=True)
-                _, b_sl, b_tp, b_w, b_t, b_m = opts
+                _, b_sl, b_tp, b_w, b_t, b_m = opts.pop(0)
                 st.markdown(f'<div class="opt-box"><strong style="color:#10B981;">🏆 AI 추천 최적 비율: 손절 {b_sl} ATR / 익절 {b_tp} ATR</strong><br>승률 {b_w:.1f}% | 누적수익 {b_t:+.2f}% | MDD {b_m:.2f}%</div>', unsafe_allow_html=True)
             else: st.warning("탐색할 매수 이력이 부족합니다. (설정에서 추세 필터를 해제해 보세요.)")
         pdf = df.tail(80)
