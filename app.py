@@ -1,4 +1,3 @@
-import io
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -27,6 +26,7 @@ div[data-baseweb="input"]>div, div[data-baseweb="select"]>div { background-color
 div[data-baseweb="input"] input { color:#0B0E14!important; font-weight:600!important; padding:4px 8px!important; }
 label p, .stRadio label p { color:#E2E8F0!important; font-size:0.8rem!important; }
 .stButton>button { background-color:#1E293B!important; color:#F8FAFC!important; border:1px solid #334155!important; border-radius:6px!important; padding:0.25rem 0.5rem!important; min-height:34px!important; }
+div[data-testid="stImage"] img { width:100%!important; height:auto!important; min-height:260px!important; display:block!important; border-radius:8px!important; }
 </style>""", unsafe_allow_html=True)
 
 with st.container(border=True):
@@ -134,4 +134,3 @@ for ax in (ax1, ax2):
 rng = max(0.01, float(pdf['High'].max() - pdf['Low'].min()))
 for i, r in pdf.iterrows():
     c = '#EF4444' if r['Close'] >= r['Open'] else '#3B82F6'
-    ax1.plot([i, i], [r['Low'], r['High']], color=c, linewidth=1.1, zorder=2)
