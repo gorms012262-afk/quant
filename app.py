@@ -158,4 +158,3 @@ apds = [
     mpf.make_addplot(pdf['EMA20'], color='#38BDF8', width=1.1),
     mpf.make_addplot(pdf['EMA50'], color='#F59E0B', width=1.1),
     mpf.make_addplot(pdf['VWAP'], color='#10B981', width=1.2, linestyle='--'),
-    mpf.make_addplot(pdf['RSI'], panel=2, color='#818CF8', width=1.2, ylabel='RSI')
