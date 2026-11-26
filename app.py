@@ -1,4 +1,6 @@
-import io, streamlit as st, yfinance as yf, pandas as pd, numpy as np, matplotlib.pyplot as plt, matplotlib.patches as patches
+import streamlit as st, yfinance as yf, pandas as pd, numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
@@ -108,30 +110,38 @@ rc = "#EF4444" if rv >= 70 else ("#10B981" if rv <= 30 else "#F8FAFC")
 
 st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-title">{ticker} ({timeframe})</div><div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.8rem;color:{cp};">({sgn}{p_pct:.2f}%)</span></div></div><div class="metric-card"><div class="metric-title">현재 추세 판정</div><div style="margin-top:2px;">{st_html}</div></div><div class="metric-card"><div class="metric-title">최근 매수 ({lb_str})</div><div class="metric-value" style="font-size:0.9rem;color:#10B981;">{lb_rsn}</div></div><div class="metric-card"><div class="metric-title">RSI(14) / 매도({ls_str})</div><div class="metric-value" style="color:{rc};">{rv:.1f}</div></div></div>', unsafe_allow_html=True)
 
-st.markdown(f"#### 📊 {ticker} 실시간 차트 ({timeframe})")
+st.markdown(f"#### 📊 {ticker} 실시간 캔들 차트 ({timeframe})")
 
 with st.container(border=True):
-    st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가 (Open)</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가 (High)</div><div class="ohlc-val" style="color:#10B981;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가 (Low)</div><div class="ohlc-val" style="color:#EF4444;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가 (Open)</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가 (High)</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가 (Low)</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-    # 최근 60개 봉 데이터 추출
-    pdf = df.tail(60).copy()
-    pidx = pdf.index
-    pdf = pdf.reset_index(drop=True)
+    # 최근 80개 봉 추출 및 X축 문자열 포맷팅 (장 마감 시간 빈 공간 제거)
+    pdf = df.tail(80).copy()
+    fmt = '%m/%d' if timeframe == "일봉" else '%m/%d %H:%M'
+    x_labels = pdf.index.strftime(fmt)
 
-    # 3단 차트 구성 (메인 캔들 / 거래량 / RSI)
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(7, 7.5), dpi=160, gridspec_kw={'height_ratios': [3.4, 1.1, 1.0]}, sharex=True)
-    fig.patch.set_facecolor('#131722')
-    for ax in (ax1, ax2, ax3):
-        ax.set_facecolor('#0B0E14')
-        ax.tick_params(colors='#94A3B8', labelsize=7.5)
-        ax.grid(True, color='#1E293B', linewidth=0.5, linestyle='--')
-        for sp in ax.spines.values():
-            sp.set_color('#1E293B')
+    # 상단 캔들차트(72%) + 하단 거래량(28%) 구성
+    fig = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.04,
+        row_heights=[0.72, 0.28]
+    )
 
-    # 1. 메인 캔들 차트 (두 번째 사진처럼 양봉=빨강, 음봉=파랑)
-    rng = max(0.01, pdf['High'].max() - pdf['Low'].min())
-    for i, r in pdf.iterrows():
-        c = '#EF4444' if r['Close'] >= r['Open'] else '#3B82F6'
-        # 꼬리 (고가~저가)
-        ax1.plot([i, i], [r['Low'], r['High']], color=c, linewidth=1.0, zorder=2)
-        # 몸통 (시가~종가)
+    # 1. 한국형 빨강(양봉)/파랑(음봉) 실시간 캔들스틱
+    fig.add_trace(
+        go.Candlestick(
+            x=x_labels,
+            open=pdf['Open'],
+            high=pdf['High'],
+            low=pdf['Low'],
+            close=pdf['Close'],
+            increasing=dict(line=dict(color='#EF4444', width=1.2), fillcolor='#EF4444'),
+            decreasing=dict(line=dict(color='#3B82F6', width=1.2), fillcolor='#3B82F6'),
+            name='캔들'
+        ),
+        row=1, col=1
+    )
+
+    # 2. 매수/매도 시그널 화살표 표시
+    buys = pdf[pdf['Buy_Signal']]
