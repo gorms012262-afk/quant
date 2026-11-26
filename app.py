@@ -537,3 +537,223 @@ with tab2:
 
                 scan_results.append({
                     "sym": sym, "price": float(slast['Close']), "chg_pct": schg_pct,
+def run_backtest(df, max_hold, sl_m, tp_m):
+    trades = []
+    n = len(df)
+    i = 0
+    while i < n - 1:
+        if df['Signal'].iloc[i] == "매수":
+            entry_idx = i + 1
+            entry_price = df['Open'].iloc[entry_idx]
+            atr_val = df['ATR'].iloc[i]
+            if pd.isna(atr_val) or atr_val <= 0:
+                atr_val = entry_price * 0.01
+
+            sl_price = entry_price - (atr_val * sl_m)
+            tp_price = entry_price + (atr_val * tp_m)
+            strat_name = df['Strategy'].iloc[i]
+            entry_time = df.index[entry_idx].strftime('%Y-%m-%d %H:%M')
+
+            exit_price = df['Close'].iloc[min(entry_idx + max_hold, n - 1)]
+            exit_reason = "기간만료"
+            exit_idx = min(entry_idx + max_hold, n - 1)
+
+            for j in range(entry_idx, min(entry_idx + max_hold + 1, n)):
+                low_p = df['Low'].iloc[j]
+                high_p = df['High'].iloc[j]
+                if low_p <= sl_price:
+                    exit_price = sl_price
+                    exit_reason = "손절(SL)"
+                    exit_idx = j
+                    break
+                elif high_p >= tp_price:
+                    exit_price = tp_price
+                    exit_reason = "익절(TP)"
+                    exit_idx = j
+                    break
+
+            ret_pct = ((exit_price - entry_price) / entry_price) * 100
+            trades.append({
+                "진입시간": entry_time,
+                "전략": strat_name,
+                "진입가": round(entry_price, 2),
+                "청산가": round(exit_price, 2),
+                "수익률(%)": round(ret_pct, 2),
+                "결과": "승" if ret_pct > 0 else "패",
+                "청산사유": exit_reason
+            })
+            i = exit_idx + 1
+        else:
+            i += 1
+
+    if not trades:
+        return pd.DataFrame(), 0.0, 0.0, 0
+
+    res_df = pd.DataFrame(trades)
+    win_rate = (res_df['결과'] == "승").mean() * 100
+    avg_ret = res_df['수익률(%)'].mean()
+    return res_df, round(win_rate, 1), round(avg_ret, 2), len(res_df)
+
+# 메인 실행 로직
+st.markdown(f"### 📈 US Stock Quant Pro · `{ticker}` ({timeframe})")
+
+df_main = load_single(ticker, timeframe, strategy_filter, use_adx_filter)
+
+if df_main is None or df_main.empty:
+    st.error(f"'{ticker}' 데이터를 불러올 수 없습니다. 티커 심볼을 확인해 주세요.")
+else:
+    last = df_main.iloc[-1]
+    prev = df_main.iloc[-2]
+    chg_pct = ((last['Close'] - prev['Close']) / prev['Close']) * 100
+    curr_sig = last['Signal']
+    curr_strat = last['Strategy']
+
+    atr_now = last['ATR'] if pd.notna(last['ATR']) and last['ATR'] > 0 else last['Close'] * 0.01
+    tp_target = last['Close'] + (atr_now * tp_mult)
+    sl_target = last['Close'] - (atr_now * sl_mult)
+
+    trades_df, win_rate, avg_ret, total_trades = run_backtest(df_main, hold_bars, sl_mult, tp_mult)
+
+    badge_html = f'<span class="badge-buy">매수 ({curr_strat})</span>' if curr_sig == "매수" else '<span class="badge-neutral">관망 (대기)</span>'
+
+    st.markdown(f"""
+    <div class="kpi-grid">
+        <div class="metric-card">
+            <div class="metric-title">현재가 ({ticker})</div>
+            <div class="metric-value">${last['Close']:.2f} <span style="font-size:0.8rem; color:{'#10B981' if chg_pct>=0 else '#EF4444'};">({chg_pct:+.2f}%)</span></div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-title">현재 시그널</div>
+            <div style="margin-top:3px;">{badge_html}</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-title">백테스트 승률 ({total_trades}회)</div>
+            <div class="metric-value" style="color:#10B981;">{win_rate:.1f}%</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-title">평균 손익비/수익률</div>
+            <div class="metric-value" style="color:{'#10B981' if avg_ret>=0 else '#EF4444'};">{avg_ret:+.2f}%</div>
+        </div>
+    </div>
+    <div class="tpsl-bar">
+        <div><div class="ohlc-lbl">진입 기준가</div><div class="ohlc-val">${last['Close']:.2f}</div></div>
+        <div><div class="ohlc-lbl">목표 익절 (TP)</div><div class="ohlc-val" style="color:#10B981;">${tp_target:.2f}</div></div>
+        <div><div class="ohlc-lbl">손절 라인 (SL)</div><div class="ohlc-val" style="color:#EF4444;">${sl_target:.2f}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.button("📩 현재 분석 결과 카카오톡 나에게 보내기", use_container_width=True):
+        alert_msg = (
+            f"[{ticker} {timeframe} 퀀트 리포트]\n"
+            f"현재가: ${last['Close']:.2f} ({chg_pct:+.2f}%)\n"
+            f"시그널: {curr_sig} ({curr_strat})\n"
+            f"익절가: ${tp_target:.2f} / 손절가: ${sl_target:.2f}\n"
+            f"백테스트 승률: {win_rate}% ({total_trades}건)"
+        )
+        ok, info_msg = send_kakao_alert(kakao_token, alert_msg)
+        if ok:
+            st.success(info_msg)
+        else:
+            st.warning(info_msg)
+
+    tab1, tab2, tab3 = st.tabs(["📊 퀀트 차트", "🔍 다중 종목 스캐너", "📋 백테스트 내역"])
+
+    with tab1:
+        plot_df = df_main.tail(120).copy()
+        fig = make_subplots(
+            rows=2, cols=1, shared_xaxes=True,
+            vertical_spacing=0.05, row_heights=[0.72, 0.28]
+        )
+
+        fig.add_trace(go.Candlestick(
+            x=plot_df.index, open=plot_df['Open'], high=plot_df['High'],
+            low=plot_df['Low'], close=plot_df['Close'], name="Price",
+            increasing_line_color='#10B981', decreasing_line_color='#EF4444'
+        ), row=1, col=1)
+
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['EMA20'], mode='lines', name='EMA20', line=dict(color='#38BDF8', width=1.2)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['VWAP'], mode='lines', name='VWAP', line=dict(color='#F59E0B', width=1.5, dash='dot')), row=1, col=1)
+
+        buy_pts = plot_df[plot_df['Signal'] == "매수"]
+        if not buy_pts.empty:
+            fig.add_trace(go.Scatter(
+                x=buy_pts.index, y=buy_pts['Low'] * 0.996,
+                mode='markers+text', name='매수 신호',
+                text=buy_pts['Strategy'], textposition="bottom center",
+                textfont=dict(size=9, color='#10B981'),
+                marker=dict(symbol='triangle-up', size=11, color='#10B981')
+            ), row=1, col=1)
+
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['RSI'], mode='lines', name='RSI(14)', line=dict(color='#A78BFA', width=1.3)), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="#475569", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="#475569", row=2, col=1)
+
+        fig.update_layout(
+            height=480, margin=dict(l=10, r=10, t=20, b=10),
+            paper_bgcolor='#0B0E14', plot_bgcolor='#131722',
+            font=dict(color='#E2E8F0', size=11),
+            xaxis_rangeslider_visible=False,
+            legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1)
+        )
+        fig.update_xaxes(gridcolor='#1E293B')
+        fig.update_yaxes(gridcolor='#1E293B')
+        st.plotly_chart(fig, use_container_width=True)
+
+    with tab2:
+        symbols = [s.strip().upper() for s in watchlist_str.split(",") if s.strip()]
+        scan_results = []
+
+        with st.spinner("관심종목 실시간 스캔 중..."):
+            for sym in symbols:
+                sdf = load_single(sym, timeframe, strategy_filter, use_adx_filter)
+                if sdf is not None and len(sdf) >= 2:
+                    s_last = sdf.iloc[-1]
+                    s_prev = sdf.iloc[-2]
+                    s_chg = ((s_last['Close'] - s_prev['Close']) / s_prev['Close']) * 100
+                    _, s_wr, s_ret, s_cnt = run_backtest(sdf, hold_bars, sl_mult, tp_mult)
+                    scan_results.append({
+                        "종목": sym,
+                        "현재가": round(float(s_last['Close']), 2),
+                        "등락률(%)": round(float(s_chg), 2),
+                        "시그널": s_last['Signal'],
+                        "포착전략": s_last['Strategy'],
+                        "RSI": round(float(s_last['RSI']), 1),
+                        "ADX": round(float(s_last['ADX']), 1),
+                        "백테스트승률(%)": s_wr,
+                        "평균수익(%)": s_ret,
+                        "신호수": s_cnt
+                    })
+
+        if scan_results:
+            scan_df = pd.DataFrame(scan_results)
+            scan_df = scan_df.sort_values(by=["시그널", "백테스트승률(%)"], ascending=[True, False])
+
+            for _, row in scan_df.iterrows():
+                b_cls = "badge-buy" if row["시그널"] == "매수" else "badge-neutral"
+                sig_txt = f"{row['시그널']} · {row['포착전략']}" if row["시그널"] == "매수" else "관망"
+                chg_color = "#10B981" if row["등락률(%)"] >= 0 else "#EF4444"
+                st.markdown(f"""
+                <div class="list-card">
+                    <div class="list-top">
+                        <div>
+                            <strong style="font-size:0.95rem; color:#F8FAFC;">{row['종목']}</strong>
+                            <span style="font-size:0.85rem; margin-left:6px; color:#E2E8F0;">${row['현재가']:.2f}</span>
+                            <span style="font-size:0.78rem; color:{chg_color};">({row['등락률(%)']:+.2f}%)</span>
+                        </div>
+                        <span class="{b_cls}">{sig_txt}</span>
+                    </div>
+                    <div class="list-sub">
+                        <span>승률: <strong style="color:#10B981;">{row['백테스트승률(%)']}%</strong> ({row['신호수']}건)</span>
+                        <span>평균수익: {row['평균수익(%)']:+.2f}%</span>
+                        <span>RSI {row['RSI']} · ADX {row['ADX']}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("스캔할 유효한 종목 데이터가 없습니다.")
+
+    with tab3:
+        if not trades_df.empty:
+            st.dataframe(trades_df.iloc[::-1], use_container_width=True, hide_index=True)
+        else:
+            st.info("선택한 조건과 필터에 해당하는 과거 매매 시그널이 없습니다.")
