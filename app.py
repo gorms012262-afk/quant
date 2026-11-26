@@ -1,124 +1,172 @@
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
+
+st.markdown("""<style>
+.stApp { background-color: #0B0E14; color: #E2E8F0; }
+.metric-card { background-color: #131722; border: 1px solid #1E293B; border-radius: 10px; padding: 16px; margin-bottom: 10px; }
+.metric-title { font-size: 0.85rem; color: #94A3B8; margin-bottom: 4px; }
+.metric-value { font-size: 1.5rem; font-weight: 700; color: #F8FAFC; }
+.badge-buy { background-color: rgba(16,185,129,0.15); color: #10B981; border: 1px solid #10B981; padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; display: inline-block; }
+.badge-sell { background-color: rgba(239,68,68,0.15); color: #EF4444; border: 1px solid #EF4444; padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; display: inline-block; }
+.badge-neutral { background-color: rgba(148,163,184,0.15); color: #94A3B8; border: 1px solid #475569; padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; display: inline-block; }
+div[data-baseweb="input"] > div { background-color: #131722 !important; color: white !important; border-color: #334155 !important; }
+</style>""", unsafe_allow_html=True)
+
+col_ctrl1, col_ctrl2, col_ctrl3, col_ctrl4 = st.columns([2, 2, 2, 1])
+with col_ctrl1:
+    ticker = st.text_input("🔍 미국 주식 티커 검색 (예: QQQ, NVDA, TSLA, AAPL, SOXL)", value="QQQ").upper().strip()
+with col_ctrl2:
+    timeframe = st.radio("⏱️ 조회 봉 기준", ["30분봉", "1시간봉", "일봉"], horizontal=True)
+with col_ctrl3:
+    strategy_filter = st.selectbox("🎯 적용 전략 필터", ["전체 전략 통합", "1. ORB (오프닝 레인지 돌파)", "2. VWAP + RSI 눌림목", "3. EMA 정배열 회귀", "4. 갭 채우기 (Gap Fill) 매도"])
+with col_ctrl4:
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🔄 데이터 새로고침", use_container_width=True):
+        st.cache_data.clear()
+
+@st.cache_data(ttl=60)
+def load_and_process_data(symbol, tf):
+    period, interval = ("1mo", "30m") if tf == "30분봉" else (("3mo", "1h") if tf == "1시간봉" else ("2y", "1d"))
+    df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True)
+    if df.empty:
+        return None
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df.dropna().copy()
+
+    if df.index.tz is None:
+        df.index = df.index.tz_localize('UTC')
+    df_ny = df.tz_convert('America/New_York')
+    df['Date_NY'] = df_ny.index.date
+    df['Time_NY'] = df_ny.index.strftime('%H:%M')
+
+    df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
+    df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
+
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    df['RSI'] = 100 - (100 / (1 + (gain / loss.replace(0, np.nan))))
+    df['Vol_MA20'] = df['Volume'].rolling(window=20).mean()
+
+    df['Typical_Price'] = (df['High'] + df['Low'] + df['Close']) / 3
+    df['TP_Vol'] = df['Typical_Price'] * df['Volume']
+    if tf in ["30분봉", "1시간봉"]:
+        df['VWAP'] = df.groupby('Date_NY')['TP_Vol'].cumsum() / df.groupby('Date_NY')['Volume'].cumsum()
+    else:
+        df['VWAP'] = df['TP_Vol'].rolling(20).sum() / df['Volume'].rolling(20).sum()
+
+    df['Buy_Signal'] = False
+    df['Sell_Signal'] = False
+    df['Signal_Reason'] = ""
+
+    if tf in ["30분봉", "1시간봉"]:
+        first_bars = df.groupby('Date_NY').first()
+        prev_closes = df.groupby('Date_NY')['Close'].last().shift(1)
+        daily_orb_high = first_bars['High'].to_dict()
+        daily_open = first_bars['Open'].to_dict()
+        daily_first_close = first_bars['Close'].to_dict()
+        daily_prev_close = prev_closes.to_dict()
+
+        for i in range(1, len(df)):
+            idx = df.index[i]
+            row, prev = df.iloc[i], df.iloc[i - 1]
+            d, t = row['Date_NY'], row['Time_NY']
+            orb_h, day_open, prev_c = daily_orb_high.get(d, np.nan), daily_open.get(d, np.nan), daily_prev_close.get(d, np.nan)
+            reasons_buy, reasons_sell = [], []
+
+            if t > "09:30" and row['Close'] > orb_h and prev['Close'] <= orb_h and row['Volume'] > row['Vol_MA20'] * 1.5:
+                reasons_buy.append("ORB 돌파")
+            if row['Close'] > row['VWAP'] and prev['RSI'] <= 40 and row['Close'] > row['Open']:
+                reasons_buy.append("VWAP+RSI 눌림")
+            is_aligned = (row['EMA20'] > row['EMA50']) and (row['EMA50'] > row['EMA200'])
+            touched_ema = (row['Low'] <= row['EMA20'] * 1.002) or (row['Low'] <= row['EMA50'] * 1.002)
+            lower_wick = min(row['Open'], row['Close']) - row['Low']
+            body = abs(row['Close'] - row['Open'])
+            if is_aligned and touched_ema and (row['Close'] > row['Open']) and (lower_wick > body * 0.5):
+                reasons_buy.append("EMA 정배열 회귀")
+            if pd.notna(prev_c) and prev_c > 0:
+                gap_pct = (day_open - prev_c) / prev_c
+                first_c = daily_first_close.get(d, np.nan)
+                if (0 < gap_pct <= 0.01) and (first_c < day_open) and (row['Close'] < row['VWAP']) and (prev['Close'] >= prev['VWAP']):
+                    reasons_sell.append("갭 채우기 이탈")
+
+            if strategy_filter == "1. ORB (오프닝 레인지 돌파)":
+                reasons_buy, reasons_sell = [r for r in reasons_buy if "ORB" in r], []
+            elif strategy_filter == "2. VWAP + RSI 눌림목":
+                reasons_buy, reasons_sell = [r for r in reasons_buy if "VWAP" in r], []
+            elif strategy_filter == "3. EMA 정배열 회귀":
+                reasons_buy, reasons_sell = [r for r in reasons_buy if "EMA" in r], []
+            elif strategy_filter == "4. 갭 채우기 (Gap Fill) 매도":
+                reasons_buy = []
+
+            if reasons_buy:
+                df.at[idx, 'Buy_Signal'] = True
+                df.at[idx, 'Signal_Reason'] = ", ".join(reasons_buy)
+            if reasons_sell:
+                df.at[idx, 'Sell_Signal'] = True
+                df.at[idx, 'Signal_Reason'] = ", ".join(reasons_sell)
+    else:
+        for i in range(1, len(df)):
+            idx = df.index[i]
+            row, prev = df.iloc[i], df.iloc[i - 1]
+            if row['Close'] > row['VWAP'] and prev['RSI'] <= 40 and row['Close'] > row['Open']:
+                df.at[idx, 'Buy_Signal'] = True
+                df.at[idx, 'Signal_Reason'] = "일봉 VWAP+RSI 눌림"
+            elif (row['EMA20'] > row['EMA50'] > row['EMA200']) and (row['Low'] <= row['EMA20']) and (row['Close'] > row['Open']):
+                df.at[idx, 'Buy_Signal'] = True
+                df.at[idx, 'Signal_Reason'] = "일봉 EMA20 지지"
+    return df
+
+with st.spinner(f"'{ticker}' 실시간 주가 및 퀀트 데이터 분석 중..."):
+    df = load_and_process_data(ticker, timeframe)
+
+if df is None or len(df) < 5:
+    st.error(f"❌ '{ticker}' 종목 데이터를 불러올 수 없습니다.")
+    st.stop()
+
+latest, prev_bar = df.iloc[-1], df.iloc[-2]
+price_diff = latest['Close'] - prev_bar['Close']
+price_pct = (price_diff / prev_bar['Close']) * 100
+buy_df, sell_df = df[df['Buy_Signal']], df[df['Sell_Signal']]
+last_buy_str = buy_df.index[-1].strftime('%m-%d %H:%M') if not buy_df.empty else "신호 없음"
+last_buy_reason = buy_df.iloc[-1]['Signal_Reason'] if not buy_df.empty else "-"
+last_sell_str = sell_df.index[-1].strftime('%m-%d %H:%M') if not sell_df.empty else "신호 없음"
+
+if latest['Buy_Signal']:
+    status_html = f'<span class="badge-buy">🟢 매수 신호 ({latest["Signal_Reason"]})</span>'
+elif latest['Sell_Signal']:
+    status_html = f'<span class="badge-sell">🔴 매도 신호 ({latest["Signal_Reason"]})</span>'
+elif latest['Close'] > latest['VWAP']:
+    status_html = '<span class="badge-buy">📈 VWAP 상단 (매수 우위)</span>'
+else:
+    status_html = '<span class="badge-neutral">⏳ 관망 구간 (VWAP 하단)</span>'
+
+c1, c2, c3, c4 = st.columns(4)
 with c1:
     color_p = "#10B981" if price_diff >= 0 else "#EF4444"
     sign = "+" if price_diff >= 0 else ""
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">{ticker} 현재가 ({timeframe})</div>
-        <div class="metric-value">${latest['Close']:,.2f} <span style="font-size:0.95rem; color:{color_p};">({sign}{price_pct:.2f}%)</span></div>
-    </div>
-    """, unsafe_allow_html=True)
-
+    st.markdown(f'<div class="metric-card"><div class="metric-title">{ticker} 현재가 ({timeframe})</div><div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.95rem;color:{color_p};">({sign}{price_pct:.2f}%)</span></div></div>', unsafe_allow_html=True)
 with c2:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">현재 추세 및 시그널 판정</div>
-        <div style="margin-top:6px;">{status_html}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
+    st.markdown(f'<div class="metric-card"><div class="metric-title">현재 추세 및 시그널 판정</div><div style="margin-top:6px;">{status_html}</div></div>', unsafe_allow_html=True)
 with c3:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">최근 매수 시그널 ({last_buy_str})</div>
-        <div class="metric-value" style="font-size:1.15rem; color:#10B981;">{last_buy_reason}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
+    st.markdown(f'<div class="metric-card"><div class="metric-title">최근 매수 시그널 ({last_buy_str})</div><div class="metric-value" style="font-size:1.15rem;color:#10B981;">{last_buy_reason}</div></div>', unsafe_allow_html=True)
 with c4:
     rsi_val = latest['RSI']
     rsi_col = "#EF4444" if rsi_val >= 70 else ("#10B981" if rsi_val <= 30 else "#F8FAFC")
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">RSI (14) / 최근 매도({last_sell_str})</div>
-        <div class="metric-value" style="color:{rsi_col};">{rsi_val:.1f}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-card"><div class="metric-title">RSI (14) / 최근 매도({last_sell_str})</div><div class="metric-value" style="color:{rsi_col};">{rsi_val:.1f}</div></div>', unsafe_allow_html=True)
 
-# 5. 메인 3단 인터랙티브 차트 (캔들+지표+시그널 / 거래량 / RSI)
 plot_df = df.tail(120).copy()
 x_labels = plot_df.index.strftime('%m-%d %H:%M') if timeframe != "일봉" else plot_df.index.strftime('%Y-%m-%d')
 
-fig = make_subplots(
-    rows=3, cols=1,
-    shared_xaxes=True,
-    vertical_spacing=0.04,
-    row_heights=[0.6, 0.2, 0.2],
-    subplot_titles=(f"{ticker} 주가 & 퀀트 전략 시그널", "거래량 (Volume)", "RSI (14)")
-)
-
-fig.add_trace(go.Candlestick(
-    x=x_labels,
-    open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'],
-    name="주가",
-    increasing_line_color='#10B981', decreasing_line_color='#EF4444'
-), row=1, col=1)
-
+fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.6, 0.2, 0.2], subplot_titles=(f"{ticker} 주가 & 퀀트 전략 시그널", "거래량 (Volume)", "RSI (14)"))
+fig.add_trace(go.Candlestick(x=x_labels, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'], name="주가", increasing_line_color='#10B981', decreasing_line_color='#EF4444'), row=1, col=1)
 fig.add_trace(go.Scatter(x=x_labels, y=plot_df['EMA20'], name="EMA 20", line=dict(color='#38BDF8', width=1.2)), row=1, col=1)
 fig.add_trace(go.Scatter(x=x_labels, y=plot_df['EMA50'], name="EMA 50", line=dict(color='#F59E0B', width=1.2)), row=1, col=1)
-fig.add_trace(go.Scatter(x=x_labels, y=plot_df['EMA200'], name="EMA 200", line=dict(color='#A855F7', width=1.5)), row=1, col=1)
-fig.add_trace(go.Scatter(x=x_labels, y=plot_df['VWAP'], name="VWAP", line=dict(color='#F43F5E', width=1.5, dash='dot')), row=1, col=1)
-
-buy_pts = plot_df[plot_df['Buy_Signal']]
-if not buy_pts.empty:
-    buy_x = buy_pts.index.strftime('%m-%d %H:%M') if timeframe != "일봉" else buy_pts.index.strftime('%Y-%m-%d')
-    fig.add_trace(go.Scatter(
-        x=buy_x, y=buy_pts['Low'] * 0.996,
-        mode='markers+text',
-        name='매수 시그널',
-        text=buy_pts['Signal_Reason'],
-        textposition='bottom center',
-        marker=dict(symbol='triangle-up', size=13, color='#10B981'),
-        textfont=dict(color='#10B981', size=10)
-    ), row=1, col=1)
-
-sell_pts = plot_df[plot_df['Sell_Signal']]
-if not sell_pts.empty:
-    sell_x = sell_pts.index.strftime('%m-%d %H:%M') if timeframe != "일봉" else sell_pts.index.strftime('%Y-%m-%d')
-    fig.add_trace(go.Scatter(
-        x=sell_x, y=sell_pts['High'] * 1.004,
-        mode='markers+text',
-        name='매도 시그널',
-        text=sell_pts['Signal_Reason'],
-        textposition='top center',
-        marker=dict(symbol='triangle-down', size=13, color='#EF4444'),
-        textfont=dict(color='#EF4444', size=10)
-    ), row=1, col=1)
-
-vol_colors = ['#10B981' if c >= o else '#EF4444' for c, o in zip(plot_df['Close'], plot_df['Open'])]
-fig.add_trace(go.Bar(x=x_labels, y=plot_df['Volume'], name="거래량", marker_color=vol_colors, opacity=0.7), row=2, col=1)
-fig.add_trace(go.Scatter(x=x_labels, y=plot_df['Vol_MA20'], name="거래량 20이평", line=dict(color='#94A3B8', width=1)), row=2, col=1)
-
-fig.add_trace(go.Scatter(x=x_labels, y=plot_df['RSI'], name="RSI (14)", line=dict(color='#818CF8', width=1.5)), row=3, col=1)
-fig.add_hline(y=70, line_dash="dash", line_color="#EF4444", opacity=0.5, row=3, col=1)
-fig.add_hline(y=30, line_dash="dash", line_color="#10B981", opacity=0.5, row=3, col=1)
-
-fig.update_layout(
-    height=780,
-    template="plotly_dark",
-    paper_bgcolor="#0B0E14",
-    plot_bgcolor="#131722",
-    xaxis_rangeslider_visible=False,
-    margin=dict(l=20, r=20, t=40, b=20),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-)
-fig.update_xaxes(type='category', nticks=12, gridcolor='#1E293B')
-fig.update_yaxes(gridcolor='#1E293B')
-
-st.plotly_chart(fig, use_container_width=True)
-
-# 6. 하단 최근 시그널 발생 이력 테이블
-st.subheader("📋 최근 포착된 퀀트 매매 시그널 이력")
-signals_df = df[df['Buy_Signal'] | df['Sell_Signal']].copy().tail(15).iloc[::-1]
-
-if signals_df.empty:
-    st.info("선택한 기간 및 전략 조건에서 발생한 시그널이 없습니다.")
-else:
-    display_df = pd.DataFrame({
-        "뉴욕 현지시간": signals_df.index.tz_convert('America/New_York').strftime('%Y-%m-%d %H:%M'),
-        "구분": np.where(signals_df['Buy_Signal'], "🟢 매수 (BUY)", "🔴 매도 (SELL)"),
-        "포착 전략": signals_df['Signal_Reason'],
-        "종가 ($)": signals_df['Close'].map(lambda x: f"${x:,.2f}"),
-        "VWAP ($)": signals_df['VWAP'].map(lambda x: f"${x:,.2f}"),
-        "RSI(14)": signals_df['RSI'].map(lambda x: f"{x:.1f}")
-    })
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
