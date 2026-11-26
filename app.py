@@ -1,13 +1,11 @@
 import streamlit as st, yfinance as yf, pandas as pd, numpy as np
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""<style>
 html, body, [data-testid="stAppViewContainer"], .stApp { background-color:#0B0E14!important; color:#E2E8F0!important; overflow-y:auto!important; -webkit-overflow-scrolling:touch!important; height:auto!important; }
 header[data-testid="stHeader"] { background-color:#0B0E14!important; }
-.block-container { padding:3.5rem 0.9rem 4rem 0.9rem!important; }
+.block-container { padding:3.5rem 0.9rem 5rem 0.9rem!important; }
 .kpi-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin:10px 0 14px 0; }
 .metric-card { background-color:#131722; border:1px solid #1E293B; border-radius:10px; padding:12px; }
 .metric-title { font-size:0.78rem; color:#94A3B8; margin-bottom:4px; }
@@ -15,9 +13,10 @@ header[data-testid="stHeader"] { background-color:#0B0E14!important; }
 .badge-buy { background-color:rgba(16,185,129,0.15); color:#10B981; border:1px solid #10B981; padding:3px 8px; border-radius:6px; font-size:0.78rem; font-weight:600; display:inline-block; }
 .badge-sell { background-color:rgba(239,68,68,0.15); color:#EF4444; border:1px solid #EF4444; padding:3px 8px; border-radius:6px; font-size:0.78rem; font-weight:600; display:inline-block; }
 .badge-neutral { background-color:rgba(148,163,184,0.15); color:#94A3B8; border:1px solid #475569; padding:3px 8px; border-radius:6px; font-size:0.78rem; font-weight:600; display:inline-block; }
-.ohlc-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; background-color:#0B0E14; border:1px solid #1E293B; border-radius:8px; padding:8px; margin-bottom:10px; text-align:center; }
+.ohlc-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; background-color:#131722; border:1px solid #1E293B; border-radius:10px; padding:10px; margin-bottom:10px; text-align:center; }
 .ohlc-lbl { font-size:0.7rem; color:#64748B; }
 .ohlc-val { font-size:0.85rem; font-weight:700; color:#F8FAFC; }
+.chart-box { background-color:#131722; border:1px solid #1E293B; border-radius:10px; padding:10px 6px 6px 6px; margin-bottom:14px; }
 div[data-testid="stVerticalBlockBorderWrapper"] { background-color:#131722!important; border:1px solid #1E293B!important; border-radius:10px!important; padding:12px!important; }
 div[data-baseweb="input"]>div, div[data-baseweb="select"]>div { background-color:#F8FAFC!important; color:#0B0E14!important; border-radius:8px!important; }
 div[data-baseweb="input"] input { color:#0B0E14!important; font-weight:600!important; }
@@ -112,36 +111,37 @@ st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-
 
 st.markdown(f"#### 📊 {ticker} 실시간 캔들 차트 ({timeframe})")
 
-with st.container(border=True):
-    st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가 (Open)</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가 (High)</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가 (Low)</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
+st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가 (Open)</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가 (High)</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가 (Low)</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-    # 최근 80개 봉 추출 및 X축 문자열 포맷팅 (장 마감 시간 빈 공간 제거)
-    pdf = df.tail(80).copy()
-    fmt = '%m/%d' if timeframe == "일봉" else '%m/%d %H:%M'
-    x_labels = pdf.index.strftime(fmt)
+pdf = df.tail(55).copy()
+pidx = pdf.index
+pdf = pdf.reset_index(drop=True)
 
-    # 상단 캔들차트(72%) + 하단 거래량(28%) 구성
-    fig = make_subplots(
-        rows=2, cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.04,
-        row_heights=[0.72, 0.28]
-    )
+W, H = 760, 460
+PAD_L, PAD_R, PAD_T, PAD_B = 12, 62, 16, 26
+PRICE_H = 290
+VOL_TOP = 325
+VOL_H = 105
+PLOT_W = W - PAD_L - PAD_R
 
-    # 1. 한국형 빨강(양봉)/파랑(음봉) 실시간 캔들스틱
-    fig.add_trace(
-        go.Candlestick(
-            x=x_labels,
-            open=pdf['Open'],
-            high=pdf['High'],
-            low=pdf['Low'],
-            close=pdf['Close'],
-            increasing=dict(line=dict(color='#EF4444', width=1.2), fillcolor='#EF4444'),
-            decreasing=dict(line=dict(color='#3B82F6', width=1.2), fillcolor='#3B82F6'),
-            name='캔들'
-        ),
-        row=1, col=1
-    )
+p_min, p_max = float(pdf['Low'].min()), float(pdf['High'].max())
+p_pad = max((p_max - p_min) * 0.06, 0.05)
+y_min, y_max = p_min - p_pad, p_max + p_pad
+y_rng = max(y_max - y_min, 0.01)
+v_max = max(float(pdf['Volume'].max()), 1.0)
 
-    # 2. 매수/매도 시그널 화살표 표시
-    buys = pdf[pdf['Buy_Signal']]
+def py(val):
+    return PAD_T + PRICE_H - ((val - y_min) / y_rng) * PRICE_H
+
+def vy(val):
+    return VOL_TOP + VOL_H - (val / v_max) * VOL_H
+
+n = len(pdf)
+step = PLOT_W / n
+cw = max(step * 0.62, 3.0)
+
+svg = [f'<svg viewBox="0 0 {W} {H}" style="width:100%;height:auto;display:block;background:#0B0E14;border-radius:8px;">']
+
+for k in range(5):
+    val = y_min + (y_rng * k / 4)
+    yy = py(val)
