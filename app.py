@@ -173,7 +173,7 @@ with tab1:
 
 with tab2:
     if 'watch_list' not in st.session_state:
-        st.session_state.watch_list = "SOXL, TQQQ, NVDL, TSLL, QQQ, NVDA, TSLA"
+        st.session_state.watch_list = "SOXL, TQQQ, NVDL, TSLL, SQQQ"
     c1, c2, c3 = st.columns(3)
     if c1.button("🔥 3배 레버리지", use_container_width=True):
         st.session_state.watch_list = "SOXL, TQQQ, NVDL, TSLL, SQQQ"
@@ -183,11 +183,11 @@ with tab2:
         st.session_state.watch_list = "QQQ, SPY, IWM, DIA"
 
     watch_input = st.text_input("관심 종목 목록 (쉼표로 구분)", key="watch_list")
-    if st.button("🔍 전체 종목 실시간 신호 스캔", use_container_width=True):
-        symbols = [s.strip().upper() for s in watch_input.split(",") if s.strip()]
-        scan_rows = []
-        with st.spinner("종목 데이터를 분석 중입니다..."):
-            for sym in symbols:
-                sdf = load_data(sym, timeframe, strategy_filter)
-                if sdf is None: continue
-                lr = sdf.iloc[-1]
+    symbols = [s.strip().upper() for s in watch_input.split(",") if s.strip()]
+    scan_rows = []
+    with st.spinner("관심 종목을 자동 분석 중입니다..."):
+        for sym in symbols:
+            sdf = load_data(sym, timeframe, strategy_filter)
+            if sdf is None: continue
+            lr = sdf.iloc[-1]
+            recent_sig = sdf[sdf['Buy_Signal'] | sdf['Sell_Signal']]
