@@ -96,8 +96,11 @@ def render_tv_chart(df_in, tf):
     pdf = df_in.tail(120).copy()
     ny_idx = pdf.index.tz_convert('America/New_York')
     candles, ema20, ema50, vwap, vols, markers = [], [], [], [], [], []
+    seen_times = set()
     for ts, r in zip(ny_idx, pdf.itertuples()):
-        t_val = ts.strftime('%Y-%m-%d') if tf == "일봉" else int(ts.tz_localize(None).timestamp())
+        t_val = ts.strftime('%Y-%m-%d') if tf == "일봉" else int(ts.timestamp())
+        if t_val in seen_times: continue
+        seen_times.add(t_val)
         candles.append({"time": t_val, "open": round(float(r.Open), 2), "high": round(float(r.High), 2), "low": round(float(r.Low), 2), "close": round(float(r.Close), 2)})
         if pd.notna(r.EMA20): ema20.append({"time": t_val, "value": round(float(r.EMA20), 2)})
         if pd.notna(r.EMA50): ema50.append({"time": t_val, "value": round(float(r.EMA50), 2)})
@@ -110,45 +113,60 @@ def render_tv_chart(df_in, tf):
             markers.append({"time": t_val, "position": "aboveBar", "color": "#EF4444", "shape": "arrowDown", "text": "SELL"})
 
     html_code = f"""
-    <div style="background:#131722;border:1px solid #1E293B;border-radius:8px;padding:6px 4px 2px 4px;">
-      <div style="display:flex;gap:10px;font-size:11px;color:#94A3B8;padding:0 8px 4px 8px;font-family:sans-serif;">
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://jsdelivr.net"></script>
+    </head>
+    <body style="margin:0;padding:0;background:#131722;font-family:sans-serif;">
+    <div style="border:1px solid #1E293B;border-radius:8px;padding:6px 4px 2px 4px;box-sizing:border-box;">
+      <div style="display:flex;gap:10px;font-size:11px;color:#94A3B8;padding:0 8px 4px 8px;">
         <span><b style="color:#38BDF8;">━</b> EMA20</span>
         <span><b style="color:#F59E0B;">━</b> EMA50</span>
         <span><b style="color:#10B981;">┄</b> VWAP</span>
         <span style="margin-left:auto;color:#64748B;">터치·줌 가능</span>
       </div>
-      <div id="tvchart" style="width:100%;height:390px;"></div>
+      <div id="tvchart" style="width:100%;height:385px;"></div>
     </div>
-    <script src="https://unpkg.com"></script>
     <script>
-      const chart = LightweightCharts.createChart(document.getElementById('tvchart'), {{
-        layout: {{ background: {{ type: 'solid', color: '#131722' }}, textColor: '#94A3B8', fontSize: 11 }},
-        grid: {{ vertLines: {{ color: '#1E293B' }}, horzLines: {{ color: '#1E293B' }} }},
-        crosshair: {{ mode: LightweightCharts.CrosshairMode.Normal }},
-        rightPriceScale: {{ borderColor: '#1E293B' }},
-        timeScale: {{ borderColor: '#1E293B', timeVisible: true, secondsVisible: false }}
+      window.addEventListener('load', function() {{
+        const container = document.getElementById('tvchart');
+        if (!window.LightweightCharts) {{
+          container.innerHTML = '<div style="color:#EF4444;padding:20px;font-size:12px;">차트 스크립트 로딩 실패</div>';
+          return;
+        }}
+        const chart = LightweightCharts.createChart(container, {{
+          width: container.clientWidth || 350,
+          height: 385,
+          layout: {{ background: {{ type: 'solid', color: '#131722' }}, textColor: '#94A3B8', fontSize: 11 }},
+          grid: {{ vertLines: {{ color: '#1E293B' }}, horzLines: {{ color: '#1E293B' }} }},
+          crosshair: {{ mode: 0 }},
+          rightPriceScale: {{ borderColor: '#1E293B' }},
+          timeScale: {{ borderColor: '#1E293B', timeVisible: true, secondsVisible: false }}
+        }});
+        const cSeries = chart.addCandlestickSeries({{
+          upColor: '#EF4444', downColor: '#3B82F6', borderVisible: false, wickUpColor: '#EF4444', wickDownColor: '#3B82F6'
+        }});
+        cSeries.setData({json.dumps(candles)});
+        cSeries.setMarkers({json.dumps(markers)});
+        const vSeries = chart.addHistogramSeries({{ priceFormat: {{ type: 'volume' }}, priceScaleId: '' }});
+        vSeries.priceScale().applyOptions({{ scaleMargins: {{ top: 0.82, bottom: 0 }} }});
+        vSeries.setData({json.dumps(vols)});
+        const e20 = chart.addLineSeries({{ color: '#38BDF8', lineWidth: 1.5, priceLineVisible: false }});
+        e20.setData({json.dumps(ema20)});
+        const e50 = chart.addLineSeries({{ color: '#F59E0B', lineWidth: 1.5, priceLineVisible: false }});
+        e50.setData({json.dumps(ema50)});
+        const vw = chart.addLineSeries({{ color: '#10B981', lineWidth: 1.5, lineStyle: 2, priceLineVisible: false }});
+        vw.setData({json.dumps(vwap)});
+        chart.timeScale().fitContent();
+        window.addEventListener('resize', () => {{
+          chart.applyOptions({{ width: container.clientWidth }});
+        }});
       }});
-      const cSeries = chart.addCandlestickSeries({{
-        upColor: '#EF4444', downColor: '#3B82F6', borderVisible: false, wickUpColor: '#EF4444', wickDownColor: '#3B82F6'
-      }});
-      cSeries.setData({json.dumps(candles)});
-      cSeries.setMarkers({json.dumps(markers)});
-      const vSeries = chart.addHistogramSeries({{ priceFormat: {{ type: 'volume' }}, priceScaleId: '' }});
-      vSeries.priceScale().applyOptions({{ scaleMargins: {{ top: 0.82, bottom: 0 }} }});
-      vSeries.setData({json.dumps(vols)});
-      const e20 = chart.addLineSeries({{ color: '#38BDF8', lineWidth: 1.5, priceLineVisible: false }});
-      e20.setData({json.dumps(ema20)});
-      const e50 = chart.addLineSeries({{ color: '#F59E0B', lineWidth: 1.5, priceLineVisible: false }});
-      e50.setData({json.dumps(ema50)});
-      const vw = chart.addLineSeries({{ color: '#10B981', lineWidth: 1.5, lineStyle: 2, priceLineVisible: false }});
-      vw.setData({json.dumps(vwap)});
-      chart.timeScale().fitContent();
-      new ResizeObserver(entries => {{
-        if (entries.length === 0 || entries.target !== document.getElementById('tvchart')) return;
-        const newRect = entries.contentRect;
-        chart.applyOptions({{ width: newRect.width, height: newRect.height }});
-      }}).observe(document.getElementById('tvchart'));
     </script>
+    </body>
+    </html>
     """
     components.html(html_code, height=425)
 
@@ -191,11 +209,3 @@ with tab1:
 
     st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-title">{ticker} ({timeframe})</div><div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.75rem;color:{cp};">({sgn}{p_pct:.2f}%)</span></div></div><div class="metric-card"><div class="metric-title">현재 추세 판정</div><div style="margin-top:2px;">{st_html}</div></div><div class="metric-card"><div class="metric-title">최근 강력매수 ({lb_str})</div><div class="metric-value" style="font-size:0.84rem;color:#10B981;">{lb_rsn}</div></div><div class="metric-card"><div class="metric-title">강력매수 승률 ({total_trades}회) / RSI</div><div class="metric-value" style="color:{rc};">{win_rate:.1f}% <span style="font-size:0.78rem;color:#94A3B8;">(RSI {rv:.1f})</span></div></div></div>', unsafe_allow_html=True)
 
-    st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
-
-    render_tv_chart(df, timeframe)
-
-    sig_df = df[df['Buy_Signal'] | df['Sell_Signal']].tail(8).iloc[::-1].copy()
-    st.markdown("<div style='font-size:0.85rem;font-weight:700;color:#F8FAFC;margin:10px 0 6px 2px;'>📋 최근 강력매수 및 손절/익절 가이드</div>", unsafe_allow_html=True)
-    if not sig_df.empty:
-        sig_ny = sig_df.index.tz_convert('America/New_York')
