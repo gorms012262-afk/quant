@@ -77,10 +77,16 @@ def load_data(symbol, tf, strat_filter):
         for i in range(1, len(df)):
             idx = df.index[i]
             r, pv = df.iloc[i], df.iloc[i-1]
-            if r['Close'] > r['VWAP'] and pv['RSI'] <= 40 and r['Close'] > r['Open']:
-                df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, "일봉 VWAP+RSI 눌림"
-            elif (r['EMA20'] > r['EMA50'] > r['EMA200']) and (r['Low'] <= r['EMA20']) and (r['Close'] > r['Open']):
-                df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, "일봉 EMA20 지지"
+            rb, rs = [], []
+            if r['Close'] > r['VWAP'] and pv['RSI'] <= 40 and r['Close'] > r['Open']: rb.append("일봉 VWAP+RSI 눌림")
+            if (r['EMA20'] > r['EMA50'] > r['EMA200']) and (r['Low'] <= r['EMA20']) and (r['Close'] > r['Open']): rb.append("일봉 EMA20 지지")
+            if (r['Open'] > pv['Close']) and (r['Close'] < pv['Close']) and (r['Close'] < r['VWAP']): rs.append("일봉 갭하락/VWAP 이탈")
+            if strat_filter == "1. ORB (오프닝 레인지 돌파)": rb, rs = [], []
+            elif strat_filter == "2. VWAP + RSI 눌림목": rb, rs = [x for x in rb if "VWAP" in x], []
+            elif strat_filter == "3. EMA 정배열 회귀": rb, rs = [x for x in rb if "EMA" in x], []
+            elif strat_filter == "4. 갭 채우기 (Gap Fill) 매도": rb = []
+            if rb: df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rb)
+            if rs: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rs)
     return df
 
 df = load_data(ticker, timeframe, strategy_filter)
@@ -92,9 +98,9 @@ latest, prev_bar = df.iloc[-1], df.iloc[-2]
 p_diff = latest['Close'] - prev_bar['Close']
 p_pct = (p_diff / prev_bar['Close']) * 100
 b_df, s_df = df[df['Buy_Signal']], df[df['Sell_Signal']]
-lb_str = b_df.index[-1].strftime('%m-%d %H:%M') if not b_df.empty else "없음"
+lb_str = b_df.index[-1].tz_convert('America/New_York').strftime('%m-%d %H:%M') if not b_df.empty else "없음"
 lb_rsn = b_df.iloc[-1]['Signal_Reason'] if not b_df.empty else "-"
-ls_str = s_df.index[-1].strftime('%m-%d %H:%M') if not s_df.empty else "없음"
+ls_str = s_df.index[-1].tz_convert('America/New_York').strftime('%m-%d %H:%M') if not s_df.empty else "없음"
 
 if latest['Buy_Signal']: st_html = f'<span class="badge-buy">🟢 {latest["Signal_Reason"]}</span>'
 elif latest['Sell_Signal']: st_html = f'<span class="badge-sell">🔴 {latest["Signal_Reason"]}</span>'
@@ -114,7 +120,7 @@ pdf = df.tail(45).copy()
 pdf.index = pdf.index.tz_convert('America/New_York')
 mc = mpf.make_marketcolors(up='#EF4444', down='#3B82F6', edge='inherit', wick='inherit', volume={'up':'#EF4444', 'down':'#3B82F6'})
 style = mpf.make_mpf_style(base_mpf_style='nightclouds', marketcolors=mc, facecolor='#0B0E14', figcolor='#131722', gridcolor='#1E293B', gridstyle='-', y_on_right=True)
-apds = [mpf.make_addplot(pdf['EMA20'], color='#38BDF8', width=1.1), mpf.make_addplot(pdf['EMA50'], color='#F59E0B', width=1.1), mpf.make_addplot(pdf['VWAP'], color='#10B981', width=1.2, linestyle='--'), mpf.make_addplot(pdf['RSI'], panel=2, color='#818CF8', width=1.2, ylabel='RSI')]
+apds = [mpf.make_addplot(pdf['EMA20'], color='#38BDF8', width=1.1), mf.make_addplot(pdf['EMA50'], color='#F59E0B', width=1.1) if False else mpf.make_addplot(pdf['EMA50'], color='#F59E0B', width=1.1), mpf.make_addplot(pdf['VWAP'], color='#10B981', width=1.2, linestyle='--'), mpf.make_addplot(pdf['RSI'], panel=2, color='#818CF8', width=1.2, ylabel='RSI')]
 buy_y = np.where(pdf['Buy_Signal'], pdf['Low'] * 0.996, np.nan)
 sell_y = np.where(pdf['Sell_Signal'], pdf['High'] * 1.004, np.nan)
 if not np.all(np.isnan(buy_y)): apds.append(mpf.make_addplot(buy_y, type='scatter', markersize=65, marker='^', color='#10B981'))
@@ -124,3 +130,15 @@ mpf.plot(pdf, type='candle', style=style, addplot=apds, volume=True, panel_ratio
 buf.seek(0)
 st.image(buf, use_container_width=True)
 plt.close('all')
+
+sig_df = df[df['Buy_Signal'] | df['Sell_Signal']].tail(10).iloc[::-1].copy()
+if not sig_df.empty:
+    sig_ny = sig_df.index.tz_convert('America/New_York')
+    hist_df = pd.DataFrame({
+        "시간(NY)": sig_ny.strftime('%Y-%m-%d %H:%M') if timeframe != "일봉" else sig_ny.strftime('%Y-%m-%d'),
+        "구분": np.where(sig_df['Buy_Signal'], "🟢 매수", "🔴 매도"),
+        "전략명": sig_df['Signal_Reason'],
+        "체결가": sig_df['Close'].map('${:,.2f}'.format)
+    })
+    st.markdown("<div style='font-size:0.82rem;font-weight:700;color:#E2E8F0;margin:10px 0 4px 2px;'>📋 최근 매매 신호 이력 (최대 10건)</div>", unsafe_allow_html=True)
+    st.dataframe(hist_df, use_container_width=True, hide_index=True)
