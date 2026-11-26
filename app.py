@@ -218,7 +218,6 @@ with tab1:
         <div><div class="ohlc-lbl">🛡️ 손절가</div><div class="ohlc-val" style="color:#EF4444;">${sl_p:,.2f}</div></div>
         <div><div class="ohlc-lbl">⚖️ 손익비(R:R)</div><div class="ohlc-val" style="color:#F59E0B;">1 : {tp_mult/sl_mult:.2f}</div></div>
         </div>""", unsafe_allow_html=True)
-
         pdf = df.tail(80)
         xl = pdf.index.tz_convert('America/New_York').strftime('%m-%d %H:%M').tolist()
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.78, 0.22])
@@ -276,3 +275,18 @@ with tab2:
                 for sub_df, lbl in [(d30.tail(3), "30m"), (d60.tail(3), "1h")]:
                     sig_rows = sub_df[sub_df['Buy_Signal'] | sub_df['Sell_Signal']]
                     if not sig_rows.empty:
+                        sr = sig_rows.iloc[-1]
+                        if sr['Buy_Signal']:
+                            sig_type, sig_txt = "BUY", f"{lbl} · {sr['Signal_Reason']}"
+                            tp_v, sl_v = float(sr['Close']) + float(sr['ATR']) * s_tp_m, float(sr['Close']) - float(sr['ATR']) * s_sl_m
+                        else:
+                            sig_type, sig_txt = "SELL", f"{lbl} · {sr['Signal_Reason']}"
+                            tp_v, sl_v = float(sr['Close']) - float(sr['ATR']) * s_tp_m, float(sr['Close']) + float(sr['ATR']) * s_sl_m
+                        break
+                scan_list.append({"sym": s, "p": float(sl['Close']), "cp": cp, "type": sig_type, "txt": sig_txt, "w60": w60, "hb": hb60, "tp": tp_v, "sl": sl_v})
+        bar.empty()
+        order_m = {"BUY": 0, "SELL": 1, "NEUTRAL": 2}
+        scan_list.sort(key=lambda x: (order_m[x['type']], -x['w60']))
+        for it in scan_list:
+            b_html = f'<span class="badge-buy">🟢 매수</span><span class="strat-txt">{it["txt"]}</span>' if it['type'] == "BUY" else (f'<span class="badge-sell">🔴 매도</span><span class="strat-txt">{it["txt"]}</span>' if it['type'] == "SELL" else '<span class="badge-neutral">청산/관망</span>')
+            st.markdown(f"""<div class="list-card"><div class="list-top"><div class="list-left">{b_html}</div><span class="price-txt">{it['sym']} ${it['p']:,.2f} ({it['cp']:+.2f}%)</span></div><div class="list-sub"><span>최고승률: <strong style="color:#10B981;">{it['w60']:.1f}%</strong> (추천 {it['hb']}봉)</span><span>목표 <strong style="color:#EF4444;">${it['tp']:,.2f}</strong> · 손절 <strong style="color:#3B82F6;">${it['sl']:,.2f}</strong></span></div></div>""", unsafe_allow_html=True)
