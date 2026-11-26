@@ -1,4 +1,4 @@
-import io, streamlit as st, yfinance as yf, pandas as pd, numpy as np, mplfinance as mpf, matplotlib.pyplot as plt
+import json, streamlit as st, streamlit.components.v1 as components, yfinance as yf, pandas as pd, numpy as np
 
 st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
@@ -92,6 +92,66 @@ def load_single(symbol, tf, strat_filter):
             if rs: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rs)
     return df
 
+def render_tv_chart(df_in, tf):
+    pdf = df_in.tail(120).copy()
+    ny_idx = pdf.index.tz_convert('America/New_York')
+    candles, ema20, ema50, vwap, vols, markers = [], [], [], [], [], []
+    for ts, r in zip(ny_idx, pdf.itertuples()):
+        t_val = ts.strftime('%Y-%m-%d') if tf == "일봉" else int(ts.tz_localize(None).timestamp())
+        candles.append({"time": t_val, "open": round(float(r.Open), 2), "high": round(float(r.High), 2), "low": round(float(r.Low), 2), "close": round(float(r.Close), 2)})
+        if pd.notna(r.EMA20): ema20.append({"time": t_val, "value": round(float(r.EMA20), 2)})
+        if pd.notna(r.EMA50): ema50.append({"time": t_val, "value": round(float(r.EMA50), 2)})
+        if pd.notna(r.VWAP): vwap.append({"time": t_val, "value": round(float(r.VWAP), 2)})
+        v_col = "rgba(239, 68, 68, 0.45)" if r.Close >= r.Open else "rgba(59, 130, 246, 0.45)"
+        vols.append({"time": t_val, "value": float(r.Volume), "color": v_col})
+        if r.Buy_Signal:
+            markers.append({"time": t_val, "position": "belowBar", "color": "#10B981", "shape": "arrowUp", "text": "BUY"})
+        elif r.Sell_Signal:
+            markers.append({"time": t_val, "position": "aboveBar", "color": "#EF4444", "shape": "arrowDown", "text": "SELL"})
+
+    html_code = f"""
+    <div style="background:#131722;border:1px solid #1E293B;border-radius:8px;padding:6px 4px 2px 4px;">
+      <div style="display:flex;gap:10px;font-size:11px;color:#94A3B8;padding:0 8px 4px 8px;font-family:sans-serif;">
+        <span><b style="color:#38BDF8;">━</b> EMA20</span>
+        <span><b style="color:#F59E0B;">━</b> EMA50</span>
+        <span><b style="color:#10B981;">┄</b> VWAP</span>
+        <span style="margin-left:auto;color:#64748B;">터치·줌 가능</span>
+      </div>
+      <div id="tvchart" style="width:100%;height:390px;"></div>
+    </div>
+    <script src="https://unpkg.com"></script>
+    <script>
+      const chart = LightweightCharts.createChart(document.getElementById('tvchart'), {{
+        layout: {{ background: {{ type: 'solid', color: '#131722' }}, textColor: '#94A3B8', fontSize: 11 }},
+        grid: {{ vertLines: {{ color: '#1E293B' }}, horzLines: {{ color: '#1E293B' }} }},
+        crosshair: {{ mode: LightweightCharts.CrosshairMode.Normal }},
+        rightPriceScale: {{ borderColor: '#1E293B' }},
+        timeScale: {{ borderColor: '#1E293B', timeVisible: true, secondsVisible: false }}
+      }});
+      const cSeries = chart.addCandlestickSeries({{
+        upColor: '#EF4444', downColor: '#3B82F6', borderVisible: false, wickUpColor: '#EF4444', wickDownColor: '#3B82F6'
+      }});
+      cSeries.setData({json.dumps(candles)});
+      cSeries.setMarkers({json.dumps(markers)});
+      const vSeries = chart.addHistogramSeries({{ priceFormat: {{ type: 'volume' }}, priceScaleId: '' }});
+      vSeries.priceScale().applyOptions({{ scaleMargins: {{ top: 0.82, bottom: 0 }} }});
+      vSeries.setData({json.dumps(vols)});
+      const e20 = chart.addLineSeries({{ color: '#38BDF8', lineWidth: 1.5, priceLineVisible: false }});
+      e20.setData({json.dumps(ema20)});
+      const e50 = chart.addLineSeries({{ color: '#F59E0B', lineWidth: 1.5, priceLineVisible: false }});
+      e50.setData({json.dumps(ema50)});
+      const vw = chart.addLineSeries({{ color: '#10B981', lineWidth: 1.5, lineStyle: 2, priceLineVisible: false }});
+      vw.setData({json.dumps(vwap)});
+      chart.timeScale().fitContent();
+      new ResizeObserver(entries => {{
+        if (entries.length === 0 || entries.target !== document.getElementById('tvchart')) return;
+        const newRect = entries.contentRect;
+        chart.applyOptions({{ width: newRect.width, height: newRect.height }});
+      }}).observe(document.getElementById('tvchart'));
+    </script>
+    """
+    components.html(html_code, height=425)
+
 tab1, tab2 = st.tabs(["📊 종목 차트 분석", "📡 관심 종목 스캐너"])
 
 with tab1:
@@ -133,54 +193,9 @@ with tab1:
 
     st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-    pdf = df.tail(45).copy()
-    pdf.index = pdf.index.tz_convert('America/New_York')
-    mc = mpf.make_marketcolors(up='#EF4444', down='#3B82F6', edge='inherit', wick='inherit', volume={'up':'#EF4444', 'down':'#3B82F6'})
-    style = mpf.make_mpf_style(base_mpf_style='nightclouds', marketcolors=mc, facecolor='#0B0E14', figcolor='#131722', gridcolor='#1E293B', gridstyle='-', y_on_right=True)
-    apds = [mpf.make_addplot(pdf['EMA20'], color='#38BDF8', width=1.1), mpf.make_addplot(pdf['EMA50'], color='#F59E0B', width=1.1), mpf.make_addplot(pdf['VWAP'], color='#10B981', width=1.2, linestyle='--'), mpf.make_addplot(pdf['RSI'], panel=2, color='#818CF8', width=1.2, ylabel='RSI')]
-    buy_y, sell_y = np.where(pdf['Buy_Signal'], pdf['Low'] * 0.996, np.nan), np.where(pdf['Sell_Signal'], pdf['High'] * 1.004, np.nan)
-    if not np.all(np.isnan(buy_y)): apds.append(mpf.make_addplot(buy_y, type='scatter', markersize=65, marker='^', color='#10B981'))
-    if not np.all(np.isnan(sell_y)): apds.append(mpf.make_addplot(sell_y, type='scatter', markersize=65, marker='v', color='#EF4444'))
-    buf = io.BytesIO()
-    mpf.plot(pdf, type='candle', style=style, addplot=apds, volume=True, panel_ratios=(5, 1.5, 2), figsize=(8, 7.5), tight_layout=True, savefig=dict(fname=buf, dpi=180, bbox_inches='tight', facecolor='#131722'))
-    buf.seek(0)
-    st.image(buf, use_container_width=True)
-    plt.close('all')
+    render_tv_chart(df, timeframe)
 
     sig_df = df[df['Buy_Signal'] | df['Sell_Signal']].tail(8).iloc[::-1].copy()
-    st.markdown("<div style='font-size:0.85rem;font-weight:700;color:#F8FAFC;margin:12px 0 6px 2px;'>📋 최근 강력매수 및 손절/익절 가이드</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:0.85rem;font-weight:700;color:#F8FAFC;margin:10px 0 6px 2px;'>📋 최근 강력매수 및 손절/익절 가이드</div>", unsafe_allow_html=True)
     if not sig_df.empty:
         sig_ny = sig_df.index.tz_convert('America/New_York')
-        for idx_dt, row in zip(sig_ny, sig_df.itertuples()):
-            t_str = idx_dt.strftime('%m-%d %H:%M') if timeframe != "일봉" else idx_dt.strftime('%Y-%m-%d')
-            badge = "<span class='badge-buy'>🟢 강력매수</span>" if row.Buy_Signal else "<span class='badge-sell'>🔴 매도</span>"
-            guide = f"목표 <b style='color:#EF4444;'>${row.Close*1.015:,.2f}</b> · 손절 <b style='color:#3B82F6;'>${row.Close*0.990:,.2f}</b>" if row.Buy_Signal else "청산/관망"
-            st.markdown(f"<div class='list-card'><div class='list-top'><div>{badge} <b style='font-size:0.82rem;color:#F8FAFC;margin-left:4px;'>{row.Signal_Reason}</b></div><div style='font-size:0.85rem;font-weight:700;color:#F8FAFC;'>${row.Close:,.2f}</div></div><div class='list-sub'><span>🕒 {t_str} (NY)</span><span>{guide}</span></div></div>", unsafe_allow_html=True)
-    else:
-        st.info("최근 구간에 발생한 강력매수 신호가 없습니다.")
-
-with tab2:
-    if 'watch_list' not in st.session_state:
-        st.session_state.watch_list = "SOXL, TQQQ, NVDL, TSLL, SQQQ"
-    c1, c2, c3 = st.columns(3)
-    if c1.button("🔥 3배 레버리지", use_container_width=True):
-        st.session_state.watch_list = "SOXL, TQQQ, NVDL, TSLL, SQQQ"
-    if c2.button("💻 빅테크 주도주", use_container_width=True):
-        st.session_state.watch_list = "NVDA, TSLA, AAPL, MSFT, META, AMZN"
-    if c3.button("📈 대표 지수 ETF", use_container_width=True):
-        st.session_state.watch_list = "QQQ, SPY, IWM, DIA"
-
-    watch_input = st.text_input("관심 종목 목록 (쉼표로 구분)", key="watch_list")
-    symbols = [s.strip().upper() for s in watch_input.split(",") if s.strip()]
-    if symbols:
-        scan_cards = []
-        for sym in symbols:
-            sdf = load_single(sym, timeframe, strategy_filter)
-            if sdf is None: continue
-            lr = sdf.iloc[-1]
-            recent_sig = sdf[sdf['Buy_Signal'] | sdf['Sell_Signal']]
-            last_dt = recent_sig.index[-1].tz_convert('America/New_York').strftime('%m-%d %H:%M') if not recent_sig.empty else "-"
-            last_rsn = recent_sig.iloc[-1]['Signal_Reason'] if not recent_sig.empty else "신호없음"
-            is_b = recent_sig.iloc[-1]['Buy_Signal'] if not recent_sig.empty else False
-            prio = 0 if lr['Buy_Signal'] else (1 if lr['Sell_Signal'] else (2 if lr['Close'] > lr['VWAP'] else 3))
-            badge = "<span class='badge-buy'>🟢 강력매수</span>" if lr['Buy_Signal'] else ("<span class='badge-sell'>🔴 매도경고</span>" if lr['Sell_Signal'] else ("<span class='badge-buy'>📈 VWAP위</span>" if lr['Close'] > lr['VWAP'] else "<span class='badge-neutral'>⏳ 관망</span>"))
