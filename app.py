@@ -116,23 +116,22 @@ st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-
 
 st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-try:
-    pdf = df.tail(55).copy()
-    pidx = pdf.index
-    pdf = pdf.reset_index(drop=True)
+pdf = df.tail(55).copy()
+pidx = pdf.index
+pdf = pdf.reset_index(drop=True)
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6.5, 4.4), dpi=180, gridspec_kw={'height_ratios': [3.3, 1.0]}, sharex=True)
-    fig.patch.set_facecolor('#131722')
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6.5, 4.4), dpi=180, gridspec_kw={'height_ratios': [3.3, 1.0]}, sharex=True)
+fig.patch.set_facecolor('#131722')
 
-    for ax in (ax1, ax2):
-        ax.set_facecolor('#0B0E14')
-        ax.tick_params(colors='#94A3B8', labelsize=8)
-        ax.yaxis.tick_right()
-        ax.grid(True, color='#1E293B', linewidth=0.5, linestyle='--')
-        for sp in ax.spines.values():
-            sp.set_color('#1E293B')
+for ax in (ax1, ax2):
+    ax.set_facecolor('#0B0E14')
+    ax.tick_params(colors='#94A3B8', labelsize=8)
+    ax.yaxis.tick_right()
+    ax.grid(True, color='#1E293B', linewidth=0.5, linestyle='--')
+    for sp in ax.spines.values():
+        sp.set_color('#1E293B')
 
-    rng = max(0.01, float(pdf['High'].max() - pdf['Low'].min()))
-    for i, r in pdf.iterrows():
-        c = '#EF4444' if r['Close'] >= r['Open'] else '#3B82F6'
-        ax1.plot([i, i], [r['Low'], r['High']], color=c, linewidth=1.1, zorder=2)
+rng = max(0.01, float(pdf['High'].max() - pdf['Low'].min()))
+for i, r in pdf.iterrows():
+    c = '#EF4444' if r['Close'] >= r['Open'] else '#3B82F6'
+    ax1.plot([i, i], [r['Low'], r['High']], color=c, linewidth=1.1, zorder=2)
