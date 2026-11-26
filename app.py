@@ -27,7 +27,7 @@ label p, .stRadio label p { color:#E2E8F0!important; font-size:0.82rem!important
 with st.expander("⚙️ 종목 / 봉 기준 / 전략 설정 (눌러서 열기)", expanded=False):
     ticker = st.text_input("티커 (예: QQQ, NVDA, TSLA)", value="QQQ").upper().strip()
     timeframe = st.radio("봉 기준", ["30분봉", "1시간봉", "일봉"], horizontal=True)
-    strategy_filter = st.selectbox("전략 필터", ["전체 전략 통합", "1. ORB (오프닝 레인지 돌파)", "2. VWAP + RSI 눌림목", "3. EMA 정배열 회귀", "4. 갭 채우기 (Gap Fill) 매도"], label_visibility="collapsed")
+    strategy_filter = st.selectbox("전략 필터", ["전체 전략 통합 (고승률 엄선)", "1. ORB (오프닝 레인지 돌파)", "2. VWAP + RSI 눌림목", "3. EMA 정배열 회귀", "4. 갭 채우기 (Gap Fill) 매도"], label_visibility="collapsed")
     if st.button("🔄 데이터 새로고침", use_container_width=True):
         st.cache_data.clear()
 
@@ -53,6 +53,7 @@ def load_data(symbol, tf, strat_filter):
     df['VWAP'] = (df.groupby('Date_NY')['TP_Vol'].cumsum() / df.groupby('Date_NY')['Volume'].cumsum()) if tf in ["30분봉", "1시간봉"] else (df['TP_Vol'].rolling(20).sum() / df['Volume'].rolling(20).sum())
     df['Vol_MA20'] = df['Volume'].rolling(20).mean()
     df['Buy_Signal'], df['Sell_Signal'], df['Signal_Reason'] = False, False, ""
+    is_hq = (strat_filter == "전체 전략 통합 (고승률 엄선)")
     if tf in ["30분봉", "1시간봉"]:
         fb = df.groupby('Date_NY').first()
         pc = df.groupby('Date_NY')['Close'].last().shift(1)
@@ -67,11 +68,16 @@ def load_data(symbol, tf, strat_filter):
             if r['Close'] > r['VWAP'] and pv['RSI'] <= 40 and r['Close'] > r['Open']: rb.append("VWAP+RSI 눌림")
             if (r['EMA20'] > r['EMA50'] > r['EMA200']) and ((r['Low'] <= r['EMA20']*1.002) or (r['Low'] <= r['EMA50']*1.002)) and (r['Close'] > r['Open']) and ((min(r['Open'], r['Close']) - r['Low']) > abs(r['Close'] - r['Open']) * 0.5): rb.append("EMA 정배열 회귀")
             if pd.notna(pcv) and pcv > 0 and (0 < (do - pcv)/pcv <= 0.01) and (f_close.get(dt, np.nan) < do) and (r['Close'] < r['VWAP']) and (pv['Close'] >= pv['VWAP']): rs.append("갭 채우기 이탈")
-            if strat_filter == "1. ORB (오프닝 레인지 돌파)": rb, rs = [x for x in rb if "ORB" in x], []
+            if is_hq:
+                if not ((r['Close'] > r['EMA50'] or r['EMA20'] > r['EMA50']) and (r['RSI'] < 68)): rb = []
+                if not (r['Close'] < r['EMA20'] and r['RSI'] > 32): rs = []
+            elif strat_filter == "1. ORB (오프닝 레인지 돌파)": rb, rs = [x for x in rb if "ORB" in x], []
             elif strat_filter == "2. VWAP + RSI 눌림목": rb, rs = [x for x in rb if "VWAP" in x], []
             elif strat_filter == "3. EMA 정배열 회귀": rb, rs = [x for x in rb if "EMA" in x], []
             elif strat_filter == "4. 갭 채우기 (Gap Fill) 매도": rb = []
-            if rb: df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rb)
+            if rb:
+                prefix = "★강력매수: " if (len(rb) >= 2 or r['Volume'] > r['Vol_MA20'] * 1.8) else ""
+                df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, prefix + ", ".join(rb)
             if rs: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rs)
     else:
         for i in range(1, len(df)):
@@ -81,11 +87,16 @@ def load_data(symbol, tf, strat_filter):
             if r['Close'] > r['VWAP'] and pv['RSI'] <= 40 and r['Close'] > r['Open']: rb.append("일봉 VWAP+RSI 눌림")
             if (r['EMA20'] > r['EMA50'] > r['EMA200']) and (r['Low'] <= r['EMA20']) and (r['Close'] > r['Open']): rb.append("일봉 EMA20 지지")
             if (r['Open'] > pv['Close']) and (r['Close'] < pv['Close']) and (r['Close'] < r['VWAP']): rs.append("일봉 갭하락/VWAP 이탈")
-            if strat_filter == "1. ORB (오프닝 레인지 돌파)": rb, rs = [], []
+            if is_hq:
+                if not ((r['Close'] > r['EMA50']) and (r['RSI'] < 68)): rb = []
+                if not (r['Close'] < r['EMA20']): rs = []
+            elif strat_filter == "1. ORB (오프닝 레인지 돌파)": rb, rs = [], []
             elif strat_filter == "2. VWAP + RSI 눌림목": rb, rs = [x for x in rb if "VWAP" in x], []
             elif strat_filter == "3. EMA 정배열 회귀": rb, rs = [x for x in rb if "EMA" in x], []
             elif strat_filter == "4. 갭 채우기 (Gap Fill) 매도": rb = []
-            if rb: df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rb)
+            if rb:
+                prefix = "★강력매수: " if (len(rb) >= 2 or r['Volume'] > r['Vol_MA20'] * 1.5) else ""
+                df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, prefix + ", ".join(rb)
             if rs: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rs)
     return df
 
@@ -93,6 +104,21 @@ df = load_data(ticker, timeframe, strategy_filter)
 if df is None or len(df) < 5:
     st.error(f"❌ '{ticker}' 종목 데이터를 불러올 수 없습니다.")
     st.stop()
+
+wins, losses = 0, 0
+buy_indices = np.where(df['Buy_Signal'])[0]
+for bi in buy_indices:
+    if bi + 1 >= len(df): continue
+    entry = df['Close'].iloc[bi]
+    future = df.iloc[bi+1 : min(bi+8, len(df))]
+    hit_tp = (future['High'] >= entry * 1.015).any()
+    hit_sl = (future['Low'] <= entry * 0.990).any()
+    if hit_tp and not hit_sl: wins += 1
+    elif hit_sl and not hit_tp: losses += 1
+    elif future['Close'].iloc[-1] > entry: wins += 1
+    else: losses += 1
+total_trades = wins + losses
+win_rate = (wins / total_trades * 100) if total_trades > 0 else 0.0
 
 latest, prev_bar = df.iloc[-1], df.iloc[-2]
 p_diff = latest['Close'] - prev_bar['Close']
@@ -112,7 +138,7 @@ sgn = "+" if p_diff >= 0 else ""
 rv = latest['RSI']
 rc = "#EF4444" if rv >= 70 else ("#10B981" if rv <= 30 else "#F8FAFC")
 
-st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-title">{ticker} ({timeframe})</div><div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.75rem;color:{cp};">({sgn}{p_pct:.2f}%)</span></div></div><div class="metric-card"><div class="metric-title">현재 추세 판정</div><div style="margin-top:2px;">{st_html}</div></div><div class="metric-card"><div class="metric-title">최근 매수 ({lb_str})</div><div class="metric-value" style="font-size:0.9rem;color:#10B981;">{lb_rsn}</div></div><div class="metric-card"><div class="metric-title">RSI(14) / 매도({ls_str})</div><div class="metric-value" style="color:{rc};">{rv:.1f}</div></div></div>', unsafe_allow_html=True)
+st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-title">{ticker} ({timeframe})</div><div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.75rem;color:{cp};">({sgn}{p_pct:.2f}%)</span></div></div><div class="metric-card"><div class="metric-title">현재 추세 판정</div><div style="margin-top:2px;">{st_html}</div></div><div class="metric-card"><div class="metric-title">최근 매수 ({lb_str})</div><div class="metric-value" style="font-size:0.88rem;color:#10B981;">{lb_rsn}</div></div><div class="metric-card"><div class="metric-title">백테스트 승률 ({total_trades}회) / RSI</div><div class="metric-value" style="color:{rc};">{win_rate:.1f}% <span style="font-size:0.78rem;color:#94A3B8;">(RSI {rv:.1f})</span></div></div></div>', unsafe_allow_html=True)
 
 st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
@@ -120,7 +146,7 @@ pdf = df.tail(45).copy()
 pdf.index = pdf.index.tz_convert('America/New_York')
 mc = mpf.make_marketcolors(up='#EF4444', down='#3B82F6', edge='inherit', wick='inherit', volume={'up':'#EF4444', 'down':'#3B82F6'})
 style = mpf.make_mpf_style(base_mpf_style='nightclouds', marketcolors=mc, facecolor='#0B0E14', figcolor='#131722', gridcolor='#1E293B', gridstyle='-', y_on_right=True)
-apds = [mpf.make_addplot(pdf['EMA20'], color='#38BDF8', width=1.1), mf.make_addplot(pdf['EMA50'], color='#F59E0B', width=1.1) if False else mpf.make_addplot(pdf['EMA50'], color='#F59E0B', width=1.1), mpf.make_addplot(pdf['VWAP'], color='#10B981', width=1.2, linestyle='--'), mpf.make_addplot(pdf['RSI'], panel=2, color='#818CF8', width=1.2, ylabel='RSI')]
+apds = [mpf.make_addplot(pdf['EMA20'], color='#38BDF8', width=1.1), mpf.make_addplot(pdf['EMA50'], color='#F59E0B', width=1.1), mpf.make_addplot(pdf['VWAP'], color='#10B981', width=1.2, linestyle='--'), mpf.make_addplot(pdf['RSI'], panel=2, color='#818CF8', width=1.2, ylabel='RSI')]
 buy_y = np.where(pdf['Buy_Signal'], pdf['Low'] * 0.996, np.nan)
 sell_y = np.where(pdf['Sell_Signal'], pdf['High'] * 1.004, np.nan)
 if not np.all(np.isnan(buy_y)): apds.append(mpf.make_addplot(buy_y, type='scatter', markersize=65, marker='^', color='#10B981'))
