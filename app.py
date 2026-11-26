@@ -63,7 +63,7 @@ def send_discord_alert(webhook_url, msg):
         return False, "디스코드 웹훅 URL이 입력되지 않았습니다."
     try:
         res = requests.post(webhook_url, json={"content": msg}, timeout=5)
-        if res.status_code in:
+        if res.status_code in (200, 204):
             return True, "디스코드 알림 전송 성공!"
         return False, f"디스코드 전송 실패 (코드: {res.status_code})"
     except Exception as e:
