@@ -1,4 +1,8 @@
-import streamlit as st, yfinance as yf, pandas as pd, numpy as np
+import streamlit as st
+import streamlit.components.v1 as components
+import yfinance as yf
+import pandas as pd
+import numpy as np
 
 st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
@@ -16,7 +20,6 @@ header[data-testid="stHeader"] { background-color:#0B0E14!important; }
 .ohlc-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; background-color:#131722; border:1px solid #1E293B; border-radius:10px; padding:10px; margin-bottom:10px; text-align:center; }
 .ohlc-lbl { font-size:0.7rem; color:#64748B; }
 .ohlc-val { font-size:0.85rem; font-weight:700; color:#F8FAFC; }
-.chart-box { background-color:#131722; border:1px solid #1E293B; border-radius:10px; padding:10px 6px 6px 6px; margin-bottom:14px; }
 div[data-testid="stVerticalBlockBorderWrapper"] { background-color:#131722!important; border:1px solid #1E293B!important; border-radius:10px!important; padding:12px!important; }
 div[data-baseweb="input"]>div, div[data-baseweb="select"]>div { background-color:#F8FAFC!important; color:#0B0E14!important; border-radius:8px!important; }
 div[data-baseweb="input"] input { color:#0B0E14!important; font-weight:600!important; }
@@ -140,7 +143,7 @@ n = len(pdf)
 step = PLOT_W / n
 cw = max(step * 0.62, 3.0)
 
-svg = [f'<svg viewBox="0 0 {W} {H}" style="width:100%;height:auto;display:block;background:#0B0E14;border-radius:8px;">']
+svg = [f'<svg viewBox="0 0 {W} {H}" style="width:100%;height:100%;display:block;background:#0B0E14;border-radius:10px;">']
 
 for k in range(5):
     val = y_min + (y_rng * k / 4)
