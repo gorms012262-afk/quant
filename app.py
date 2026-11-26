@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -24,10 +25,11 @@ div[data-baseweb="input"]>div, div[data-baseweb="select"]>div { background-color
 div[data-baseweb="input"] input { color:#0B0E14!important; font-weight:600!important; padding:4px 8px!important; }
 label p, .stRadio label p { color:#E2E8F0!important; font-size:0.8rem!important; }
 .stButton>button { background-color:#1E293B!important; color:#F8FAFC!important; border:1px solid #334155!important; border-radius:6px!important; padding:0.25rem 0.5rem!important; min-height:34px!important; }
+iframe { width:100%!important; min-height:480px!important; border-radius:8px!important; }
 </style>""", unsafe_allow_html=True)
 
 with st.container(border=True):
-    ticker = st.text_input("티커 (예: QQQ, NVDA, TSLA)", value="QQQ").upper().strip()
+    ticker = st.text_input("티커 (예: QQQ, RGTI, NVDA, TSLA)", value="QQQ").upper().strip()
     timeframe = st.radio("봉 기준", ["30분봉", "1시간봉", "일봉"], horizontal=True, label_visibility="collapsed")
     strategy_filter = st.selectbox("전략 필터", ["전체 전략 통합", "1. ORB (오프닝 레인지 돌파)", "2. VWAP + RSI 눌림목", "3. EMA 정배열 회귀", "4. 갭 채우기 (Gap Fill) 매도"], label_visibility="collapsed")
     if st.button("🔄 새로고침", use_container_width=True):
@@ -113,23 +115,27 @@ st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-
 
 st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-pdf = df.tail(45).copy()
-pidx = pdf.index
-pdf = pdf.reset_index(drop=True)
+# 트레이딩뷰(TradingView) 실시간 캔들 차트 위젯 (30분봉 / 1시간봉 / 일봉 자동 연동)
+tv_interval = "30" if timeframe == "30분봉" else ("60" if timeframe == "1시간봉" else "D")
 
-p_min = float(pdf['Low'].min())
-p_max = float(pdf['High'].max())
-p_rng = max(p_max - p_min, 0.01)
-v_max = max(float(pdf['Volume'].max()), 1.0)
-
-candle_cols = []
-vol_cols = []
-
-for i, r in pdf.iterrows():
-    col = "#EF4444" if r['Close'] >= r['Open'] else "#3B82F6"
-    wick_b = ((r['Low'] - p_min) / p_rng) * 100
-    wick_h = max(((r['High'] - r['Low']) / p_rng) * 100, 1.0)
-    body_low = min(r['Open'], r['Close'])
-    body_high = max(r['Open'], r['Close'])
-    body_b = ((body_low - p_min) / p_rng) * 100
-    body_h = max(((body_high - body_low) / p_rng) * 100, 1.5)
+tv_widget = f"""
+<div class="tradingview-widget-container" style="height:480px;width:100%;">
+  <div id="tradingview_chart" style="height:480px;width:100%;"></div>
+  <script type="text/javascript" src="https://tradingview.com"></script>
+  <script type="text/javascript">
+  new TradingView.widget({{
+    "width": "100%",
+    "height": 480,
+    "symbol": "{ticker}",
+    "interval": "{tv_interval}",
+    "timezone": "America/New_York",
+    "theme": "dark",
+    "style": "1",
+    "locale": "kr",
+    "toolbar_bg": "#131722",
+    "enable_publishing": false,
+    "hide_top_toolbar": false,
+    "hide_legend": false,
+    "save_image": false,
+    "backgroundColor": "#0B0E14",
+    "gridColor": "#1E293B",
