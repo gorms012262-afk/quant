@@ -113,7 +113,6 @@ st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-
 
 st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-# 순수 HTML div 블록으로 캔들 + 거래량 차트 직접 렌더링 (아이폰 Safari 100% 보장)
 pdf = df.tail(45).copy()
 pidx = pdf.index
 pdf = pdf.reset_index(drop=True)
@@ -127,18 +126,10 @@ candle_cols = []
 vol_cols = []
 
 for i, r in pdf.iterrows():
-    is_up = r['Close'] >= r['Open']
-    col = "#EF4444" if is_up else "#3B82F6"
-    
+    col = "#EF4444" if r['Close'] >= r['Open'] else "#3B82F6"
     wick_b = ((r['Low'] - p_min) / p_rng) * 100
     wick_h = max(((r['High'] - r['Low']) / p_rng) * 100, 1.0)
-    
     body_low = min(r['Open'], r['Close'])
     body_high = max(r['Open'], r['Close'])
     body_b = ((body_low - p_min) / p_rng) * 100
     body_h = max(((body_high - body_low) / p_rng) * 100, 1.5)
-    
-    sig_dot = ""
-    if r['Buy_Signal']:
-        sig_dot = f'<div style="position:absolute;bottom:{max(0, wick_b-6):.1f}%;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:#10B981;"></div>'
-    elif r['Sell_Signal']:
