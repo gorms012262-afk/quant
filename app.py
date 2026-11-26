@@ -2,8 +2,6 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 
 st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
@@ -115,24 +113,32 @@ st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-
 
 st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-# 캔들 차트 그리기 (plt.close 제거 및 기본 레이아웃 복원)
-pdf = df.tail(55).copy()
+# 순수 HTML div 블록으로 캔들 + 거래량 차트 직접 렌더링 (아이폰 Safari 100% 보장)
+pdf = df.tail(45).copy()
 pidx = pdf.index
 pdf = pdf.reset_index(drop=True)
 
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6.5, 4.4), dpi=160, gridspec_kw={'height_ratios': [3.3, 1.0]}, sharex=True)
-fig.patch.set_facecolor('#131722')
+p_min = float(pdf['Low'].min())
+p_max = float(pdf['High'].max())
+p_rng = max(p_max - p_min, 0.01)
+v_max = max(float(pdf['Volume'].max()), 1.0)
 
-for ax in (ax1, ax2):
-    ax.set_facecolor('#0B0E14')
-    ax.tick_params(colors='#94A3B8', labelsize=8)
-    ax.yaxis.tick_right()
-    ax.grid(True, color='#1E293B', linewidth=0.5, linestyle='--')
-    for sp in ax.spines.values():
-        sp.set_color('#1E293B')
+candle_cols = []
+vol_cols = []
 
-rng = max(0.01, float(pdf['High'].max() - pdf['Low'].min()))
 for i, r in pdf.iterrows():
-    c = '#EF4444' if r['Close'] >= r['Open'] else '#3B82F6'
-    ax1.plot([i, i], [r['Low'], r['High']], color=c, linewidth=1.1, zorder=2)
-    ax1.add_patch(patches.Rectangle((i - 0.34, min(r['Open'], r['Close'])), 0.68, max(abs(r['Close'] - r['Open']), rng * 0.005), facecolor=c, edgecolor=c, zorder=3))
+    is_up = r['Close'] >= r['Open']
+    col = "#EF4444" if is_up else "#3B82F6"
+    
+    wick_b = ((r['Low'] - p_min) / p_rng) * 100
+    wick_h = max(((r['High'] - r['Low']) / p_rng) * 100, 1.0)
+    
+    body_low = min(r['Open'], r['Close'])
+    body_high = max(r['Open'], r['Close'])
+    body_b = ((body_low - p_min) / p_rng) * 100
+    body_h = max(((body_high - body_low) / p_rng) * 100, 1.5)
+    
+    sig_dot = ""
+    if r['Buy_Signal']:
+        sig_dot = f'<div style="position:absolute;bottom:{max(0, wick_b-6):.1f}%;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:#10B981;"></div>'
+    elif r['Sell_Signal']:
