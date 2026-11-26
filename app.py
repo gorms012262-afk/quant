@@ -9,30 +9,35 @@ st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial
 
 st.markdown("""<style>
 .stApp { background-color: #0B0E14; color: #E2E8F0; }
-.block-container { padding-top: 0.8rem !important; padding-bottom: 1rem !important; padding-left: 0.8rem !important; padding-right: 0.8rem !important; }
-.kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px; }
-.metric-card { background-color: #131722; border: 1px solid #1E293B; border-radius: 10px; padding: 10px 12px; }
-.metric-title { font-size: 0.75rem; color: #94A3B8; margin-bottom: 2px; }
-.metric-value { font-size: 1.15rem; font-weight: 700; color: #F8FAFC; }
-.badge-buy { background-color: rgba(16,185,129,0.15); color: #10B981; border: 1px solid #10B981; padding: 2px 7px; border-radius: 5px; font-size: 0.75rem; font-weight: 600; display: inline-block; }
-.badge-sell { background-color: rgba(239,68,68,0.15); color: #EF4444; border: 1px solid #EF4444; padding: 2px 7px; border-radius: 5px; font-size: 0.75rem; font-weight: 600; display: inline-block; }
-.badge-neutral { background-color: rgba(148,163,184,0.15); color: #94A3B8; border: 1px solid #475569; padding: 2px 7px; border-radius: 5px; font-size: 0.75rem; font-weight: 600; display: inline-block; }
-div[data-baseweb="input"] > div, div[data-baseweb="select"] > div { background-color: #131722 !important; color: white !important; border-color: #334155 !important; }
+.block-container { padding-top: 0.6rem !important; padding-bottom: 1rem !important; padding-left: 0.6rem !important; padding-right: 0.6rem !important; }
+header[data-testid="stHeader"] { background-color: #0B0E14 !important; height: 2.2rem !important; }
+.kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 8px; }
+.metric-card { background-color: #131722; border: 1px solid #1E293B; border-radius: 8px; padding: 8px 10px; }
+.metric-title { font-size: 0.72rem; color: #94A3B8; margin-bottom: 2px; }
+.metric-value { font-size: 1.1rem; font-weight: 700; color: #F8FAFC; }
+.badge-buy { background-color: rgba(16,185,129,0.15); color: #10B981; border: 1px solid #10B981; padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; display: inline-block; }
+.badge-sell { background-color: rgba(239,68,68,0.15); color: #EF4444; border: 1px solid #EF4444; padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; display: inline-block; }
+.badge-neutral { background-color: rgba(148,163,184,0.15); color: #94A3B8; border: 1px solid #475569; padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; display: inline-block; }
+div[data-testid="stExpander"] { background-color: #131722 !important; border: 1px solid #1E293B !important; border-radius: 8px !important; margin-bottom: 8px !important; }
+div[data-testid="stExpander"] summary p { color: #E2E8F0 !important; font-size: 0.85rem !important; font-weight: 600 !important; }
+div[data-baseweb="input"] > div, div[data-baseweb="select"] > div { background-color: #0B0E14 !important; color: #F8FAFC !important; border-color: #334155 !important; }
+div[data-baseweb="input"] input { color: #F8FAFC !important; }
+label p, .stRadio label p { color: #E2E8F0 !important; font-size: 0.82rem !important; }
 .stButton > button { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #334155 !important; }
 </style>""", unsafe_allow_html=True)
 
-col1, col2 = st.columns([1.3, 1.7])
-with col1:
-    ticker = st.text_input("🔍 티커 검색", value="QQQ").upper().strip()
-with col2:
-    timeframe = st.radio("⏱️ 봉 기준", ["30분봉", "1시간봉", "일봉"], horizontal=True)
-
-col3, col4 = st.columns([2.2, 1])
-with col3:
-    strategy_filter = st.selectbox("🎯 전략 필터", ["전체 전략 통합", "1. ORB (오프닝 레인지 돌파)", "2. VWAP + RSI 눌림목", "3. EMA 정배열 회귀", "4. 갭 채우기 (Gap Fill) 매도"], label_visibility="collapsed")
-with col4:
-    if st.button("🔄 새로고침", use_container_width=True):
-        st.cache_data.clear()
+with st.expander("⚙️ 종목 검색 / 봉 기준 / 전략 필터", expanded=False):
+    c1, c2 = st.columns([1.2, 1.8])
+    with c1:
+        ticker = st.text_input("티커 (예: QQQ, NVDA, TSLA)", value="QQQ").upper().strip()
+    with c2:
+        timeframe = st.radio("봉 기준", ["30분봉", "1시간봉", "일봉"], horizontal=True)
+    c3, c4 = st.columns([2.2, 1])
+    with c3:
+        strategy_filter = st.selectbox("전략 필터", ["전체 전략 통합", "1. ORB (오프닝 레인지 돌파)", "2. VWAP + RSI 눌림목", "3. EMA 정배열 회귀", "4. 갭 채우기 (Gap Fill) 매도"], label_visibility="collapsed")
+    with c4:
+        if st.button("🔄 새로고침", use_container_width=True):
+            st.cache_data.clear()
 
 @st.cache_data(ttl=60)
 def load_and_process_data(symbol, tf):
@@ -161,7 +166,7 @@ st.markdown(f"""
 <div class="kpi-grid">
     <div class="metric-card">
         <div class="metric-title">{ticker} ({timeframe})</div>
-        <div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.8rem;color:{color_p};">({sign}{price_pct:.2f}%)</span></div>
+        <div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.78rem;color:{color_p};">({sign}{price_pct:.2f}%)</span></div>
     </div>
     <div class="metric-card">
         <div class="metric-title">현재 추세 판정</div>
@@ -169,7 +174,7 @@ st.markdown(f"""
     </div>
     <div class="metric-card">
         <div class="metric-title">최근 매수 ({last_buy_str})</div>
-        <div class="metric-value" style="font-size:0.95rem;color:#10B981;">{last_buy_reason}</div>
+        <div class="metric-value" style="font-size:0.9rem;color:#10B981;">{last_buy_reason}</div>
     </div>
     <div class="metric-card">
         <div class="metric-title">RSI(14) / 매도({last_sell_str})</div>
@@ -178,10 +183,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-plot_df = df.tail(65).copy()
-x_labels = plot_df.index.strftime('%m-%d %H:%M') if timeframe != "일봉" else plot_df.index.strftime('%y-%m-%d')
-
-fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.6, 0.2, 0.2])
-fig.add_trace(go.Candlestick(x=x_labels, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'], name="주가", increasing_line_color='#10B981', decreasing_line_color='#EF4444'), row=1, col=1)
-fig.add_trace(go.Scatter(x=x_labels, y=plot_df['EMA20'], name="EMA20", line=dict(color='#38BDF8', width=1.2)), row=1, col=1)
-fig.add_trace(go.Scatter(x=x_labels, y=plot_df['EMA50'], name="EMA50", line=dict(color='#F59E0B', width=1.2)), row=1, col=1)
+plot_df = df.tail(60).copy().reset_index(drop=True)
+x_idx = list(range(len(plot_df)))
+tick_step = max(1, len(plot_df) // 5)
