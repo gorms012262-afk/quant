@@ -1,4 +1,4 @@
-import io, base64
+import io
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -11,7 +11,7 @@ st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial
 st.markdown("""<style>
 html, body, [data-testid="stAppViewContainer"], .stApp { background-color:#0B0E14!important; color:#E2E8F0!important; overflow-y:auto!important; -webkit-overflow-scrolling:touch!important; height:auto!important; }
 header[data-testid="stHeader"] { background-color:#0B0E14!important; height:2rem!important; }
-.block-container { padding:2.2rem 0.7rem 3rem 0.7rem!important; }
+.block-container { padding:2.2rem 0.7rem 4rem 0.7rem!important; }
 .kpi-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:6px; margin:6px 0 8px 0; }
 .metric-card { background-color:#131722; border:1px solid #1E293B; border-radius:8px; padding:8px 10px; }
 .metric-title { font-size:0.72rem; color:#94A3B8; margin-bottom:2px; }
@@ -30,14 +30,11 @@ label p, .stRadio label p { color:#E2E8F0!important; font-size:0.8rem!important;
 </style>""", unsafe_allow_html=True)
 
 with st.container(border=True):
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        ticker = st.text_input("티커", value="QQQ", label_visibility="collapsed", placeholder="티커 (예: QQQ)").upper().strip()
-    with c2:
-        if st.button("🔄 새로고침", use_container_width=True):
-            st.cache_data.clear()
+    ticker = st.text_input("티커 (예: QQQ, NVDA, TSLA)", value="QQQ").upper().strip()
     timeframe = st.radio("봉 기준", ["30분봉", "1시간봉", "일봉"], horizontal=True, label_visibility="collapsed")
     strategy_filter = st.selectbox("전략 필터", ["전체 전략 통합", "1. ORB (오프닝 레인지 돌파)", "2. VWAP + RSI 눌림목", "3. EMA 정배열 회귀", "4. 갭 채우기 (Gap Fill) 매도"], label_visibility="collapsed")
+    if st.button("🔄 새로고침", use_container_width=True):
+        st.cache_data.clear()
 
 @st.cache_data(ttl=60)
 def load_data(symbol, tf):
@@ -119,21 +116,23 @@ st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-
 
 st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-pdf = df.tail(55).copy()
-pidx = pdf.index
-pdf = pdf.reset_index(drop=True)
+try:
+    pdf = df.tail(55).copy()
+    pidx = pdf.index
+    pdf = pdf.reset_index(drop=True)
 
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6.5, 4.3), dpi=180, gridspec_kw={'height_ratios': [3.3, 1.0]}, sharex=True)
-fig.patch.set_facecolor('#131722')
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6.5, 4.4), dpi=180, gridspec_kw={'height_ratios': [3.3, 1.0]}, sharex=True)
+    fig.patch.set_facecolor('#131722')
 
-for ax in (ax1, ax2):
-    ax.set_facecolor('#0B0E14')
-    ax.tick_params(colors='#94A3B8', labelsize=8)
-    ax.yaxis.tick_right()
-    ax.grid(True, color='#1E293B', linewidth=0.5, linestyle='--')
-    for sp in ax.spines.values():
-        sp.set_color('#1E293B')
+    for ax in (ax1, ax2):
+        ax.set_facecolor('#0B0E14')
+        ax.tick_params(colors='#94A3B8', labelsize=8)
+        ax.yaxis.tick_right()
+        ax.grid(True, color='#1E293B', linewidth=0.5, linestyle='--')
+        for sp in ax.spines.values():
+            sp.set_color('#1E293B')
 
-rng = max(0.01, float(pdf['High'].max() - pdf['Low'].min()))
-for i, r in pdf.iterrows():
-    c = '#EF4444' if r['Close'] >= r['Open'] else '#3B82F6'
+    rng = max(0.01, float(pdf['High'].max() - pdf['Low'].min()))
+    for i, r in pdf.iterrows():
+        c = '#EF4444' if r['Close'] >= r['Open'] else '#3B82F6'
+        ax1.plot([i, i], [r['Low'], r['High']], color=c, linewidth=1.1, zorder=2)
