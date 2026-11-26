@@ -20,7 +20,6 @@ header[data-testid="stHeader"] { background-color:#0B0E14; }
 .badge-buy { background-color:rgba(16,185,129,0.15); color:#10B981; border:1px solid #10B981; padding:2px 6px; border-radius:5px; font-size:0.72rem; font-weight:600; display:inline-block; }
 .badge-sell { background-color:rgba(239,68,68,0.15); color:#EF4444; border:1px solid #EF4444; padding:2px 6px; border-radius:5px; font-size:0.72rem; font-weight:600; display:inline-block; }
 .badge-neutral { background-color:rgba(148,163,184,0.15); color:#94A3B8; border:1px solid #475569; padding:2px 6px; border-radius:5px; font-size:0.72rem; font-weight:600; display:inline-block; }
-.ohlc-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; background-color:#131722; border:1px solid #1E293B; border-radius:8px; padding:7px 6px; margin-bottom:8px; text-align:center; }
 .ohlc-lbl { font-size:0.68rem; color:#64748B; margin-bottom:1px; }
 .ohlc-val { font-size:0.82rem; font-weight:700; color:#F8FAFC; }
 .tpsl-bar { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; background-color:#131722; border:1px solid #334155; border-radius:8px; padding:8px; margin-bottom:8px; text-align:center; }
@@ -36,7 +35,6 @@ label p, .stRadio label p, button[data-baseweb="tab"] p { color:#E2E8F0!importan
 .stButton>button { background-color:#1E293B!important; color:#F8FAFC!important; border:1px solid #334155!important; border-radius:8px!important; font-size:0.8rem!important; }
 </style>""", unsafe_allow_html=True)
 
-# --- 설정 영역 ---
 with st.expander("⚙️ 종목 / 전략 / ATR 리스크 / 알림 설정 (눌러서 열기)", expanded=False):
     ticker = st.text_input("메인 분석 티커 (예: QQQ, NVDA, TSLA)", value="QQQ").upper().strip()
     timeframe = st.radio("봉 기준", ["30분봉", "1시간봉", "일봉"], horizontal=True)
@@ -60,7 +58,6 @@ with st.expander("⚙️ 종목 / 전략 / ATR 리스크 / 알림 설정 (눌러
     if st.button("🔄 데이터 새로고침", use_container_width=True):
         st.cache_data.clear()
 
-# --- 알림 전송 함수 ---
 def send_discord_alert(webhook_url, msg):
     if not webhook_url:
         return False, "디스코드 웹훅 URL이 입력되지 않았습니다."
@@ -90,8 +87,6 @@ def send_kakao_alert(access_token, msg):
         return False, f"카카오톡 전송 실패: {res.text}"
     except Exception as e:
         return False, f"오류 발생: {e}"
-
-# --- 데이터 로드 및 지표/시그널 연산 ---
 @st.cache_data(ttl=60)
 def load_single(symbol, tf, strat_filter):
     p, iv = ("1mo", "30m") if tf == "30분봉" else (("3mo", "1h") if tf == "1시간봉" else ("2y", "1d"))
@@ -109,24 +104,20 @@ def load_single(symbol, tf, strat_filter):
     df_ny = df.tz_convert('America/New_York')
     df['Date_NY'], df['Time_NY'] = df_ny.index.date, df_ny.index.strftime('%H:%M')
 
-    # 이동평균선
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
     df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
 
-    # RSI (14)
     d = df['Close'].diff()
     g, l = d.where(d > 0, 0).rolling(14).mean(), (-d.where(d < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + g / l.replace(0, np.nan)))
 
-    # ATR (14) 계산
     tr1 = df['High'] - df['Low']
     tr2 = (df['High'] - df['Close'].shift(1)).abs()
     tr3 = (df['Low'] - df['Close'].shift(1)).abs()
     df['TR'] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     df['ATR'] = df['TR'].rolling(14).mean().bfill()
 
-    # VWAP & 거래량 이평
     tp = (df['High'] + df['Low'] + df['Close']) / 3
     df['TP_Vol'] = tp * df['Volume']
     df['VWAP'] = (
@@ -174,3 +165,313 @@ def load_single(symbol, tf, strat_filter):
                     df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rs)
     else:
         for i in range(1, len(df)):
+            idx, r, pv = df.index[i], df.iloc[i], df.iloc[i - 1]
+            rb, rs = [], []
+
+            if r['Close'] > r['VWAP'] and pv['RSI'] <= 40 and r['Close'] > r['Open']:
+                rb.append("VWAP+RSI 눌림")
+            if (r['EMA20'] > r['EMA50'] > r['EMA200']) and (r['Low'] <= r['EMA20']) and (r['Close'] > r['Open']):
+                rb.append("EMA 정배열 회귀")
+            if (r['Open'] > pv['Close']) and (r['Close'] < pv['Close']) and (r['Close'] < r['VWAP']):
+                rs.append("갭 채우기 이탈")
+
+            if not ((r['Close'] > r['EMA50']) and (r['RSI'] < 68)):
+                rb = []
+            if not (r['Close'] < r['EMA20']):
+                rs = []
+
+            if strat_filter != "전체 전략 통합 (고승률 엄선)":
+                rb = [x for x in rb if strat_filter in x]
+                rs = [x for x in rs if strat_filter in x]
+                if rb:
+                    df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, "일봉 매수: " + ", ".join(rb)
+                if rs:
+                    df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, "일봉 " + ", ".join(rs)
+            else:
+                if rb and (len(rb) >= 2 or r['Volume'] > r['Vol_MA20'] * 1.5):
+                    df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, "★강력매수: " + ", ".join(rb)
+                if rs:
+                    df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rs)
+    return df
+
+def calc_backtest_metrics(df_in, n_bars):
+    buy_indices = np.where(df_in['Buy_Signal'])[0]
+    trades = []
+    for idx in buy_indices:
+        if idx + n_bars < len(df_in):
+            entry_p = df_in['Close'].iloc[idx]
+            exit_p = df_in['Close'].iloc[idx + n_bars]
+            exit_dt = df_in.index[idx + n_bars]
+            ret = (exit_p - entry_p) / entry_p
+            trades.append({"date": exit_dt, "ret": ret})
+
+    if not trades:
+        return 0, 0.0, 0.0, 0.0, 0.0, pd.DataFrame()
+
+    t_df = pd.DataFrame(trades)
+    t_df['cum_equity'] = (1 + t_df['ret']).cumprod()
+    t_df['cum_ret_pct'] = (t_df['cum_equity'] - 1) * 100
+    t_df['peak'] = t_df['cum_equity'].cummax()
+    t_df['dd_pct'] = ((t_df['cum_equity'] - t_df['peak']) / t_df['peak']) * 100
+
+    win_rate = (t_df['ret'] > 0).mean() * 100
+    avg_ret = t_df['ret'].mean() * 100
+    total_ret = t_df['cum_ret_pct'].iloc[-1]
+    mdd = t_df['dd_pct'].min()
+    return len(t_df), win_rate, avg_ret, total_ret, mdd, t_df
+
+def render_tv_chart(df_in, tf, tp_price, sl_price):
+    pdf = df_in.tail(75).copy()
+    ny_idx = pdf.index.tz_convert('America/New_York')
+    x_lbl = ny_idx.strftime('%m-%d %H:%M') if tf != "일봉" else ny_idx.strftime('%Y-%m-%d')
+
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.78, 0.22])
+    fig.add_trace(go.Candlestick(
+        x=x_lbl, open=pdf['Open'], high=pdf['High'], low=pdf['Low'], close=pdf['Close'],
+        increasing_line_color='#EF4444', decreasing_line_color='#3B82F6',
+        increasing_fillcolor='#EF4444', decreasing_fillcolor='#3B82F6', name="가격"
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(x=x_lbl, y=pdf['EMA20'], line=dict(color='#F59E0B', width=1.1), name="EMA20"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=x_lbl, y=pdf['EMA50'], line=dict(color='#10B981', width=1.1), name="EMA50"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=x_lbl, y=pdf['VWAP'], line=dict(color='#A855F7', width=1.2, dash='dot'), name="VWAP"), row=1, col=1)
+
+    fig.add_hline(y=tp_price, line_dash="dash", line_color="#10B981", line_width=1,
+                  annotation_text=f"TP ${tp_price:.2f}", annotation_position="top left",
+                  annotation_font=dict(color="#10B981", size=10), row=1, col=1)
+    fig.add_hline(y=sl_price, line_dash="dash", line_color="#EF4444", line_width=1,
+                  annotation_text=f"SL ${sl_price:.2f}", annotation_position="bottom left",
+                  annotation_font=dict(color="#EF4444", size=10), row=1, col=1)
+
+    buys = pdf[pdf['Buy_Signal']]
+    if not buys.empty:
+        b_idx = buys.index.tz_convert('America/New_York')
+        b_x = b_idx.strftime('%m-%d %H:%M') if tf != "일봉" else b_idx.strftime('%Y-%m-%d')
+        fig.add_trace(go.Scatter(
+            x=b_x, y=buys['Low'] * 0.997, mode='markers',
+            marker=dict(symbol='triangle-up', size=11, color='#10B981'),
+            text=buys['Signal_Reason'], hoverinfo='text+x+y', name="매수신호"
+        ), row=1, col=1)
+
+    sells = pdf[pdf['Sell_Signal']]
+    if not sells.empty:
+        s_idx = sells.index.tz_convert('America/New_York')
+        s_x = s_idx.strftime('%m-%d %H:%M') if tf != "일봉" else s_idx.strftime('%Y-%m-%d')
+        fig.add_trace(go.Scatter(
+            x=s_x, y=sells['High'] * 1.003, mode='markers',
+            marker=dict(symbol='triangle-down', size=11, color='#EF4444'),
+            text=sells['Signal_Reason'], hoverinfo='text+x+y', name="매도신호"
+        ), row=1, col=1)
+
+    vol_colors = ['#EF4444' if c >= o else '#3B82F6' for c, o in zip(pdf['Close'], pdf['Open'])]
+    fig.add_trace(go.Bar(x=x_lbl, y=pdf['Volume'], marker_color=vol_colors, name="거래량", showlegend=False), row=2, col=1)
+
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor="#0B0E14", plot_bgcolor="#131722",
+        margin=dict(l=5, r=5, t=10, b=10), height=440, xaxis_rangeslider_visible=False,
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0, font=dict(size=10))
+    )
+    fig.update_xaxes(type='category', tickangle=-45, nticks=8, showgrid=True, gridcolor='#1E293B')
+    fig.update_yaxes(showgrid=True, gridcolor='#1E293B', side='right')
+    return fig
+
+def render_equity_chart(t_df, tf):
+    ny_idx = pd.DatetimeIndex(t_df['date']).tz_convert('America/New_York')
+    x_lbl = ny_idx.strftime('%m-%d %H:%M') if tf != "일봉" else ny_idx.strftime('%Y-%m-%d')
+
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.06, row_heights=[0.65, 0.35])
+tab1, tab2 = st.tabs(["📊 종목 분석 & 리스크/백테스트", "🔍 멀티 스캐너 & 실시간 알림"])
+
+with tab1:
+    df = load_single(ticker, timeframe, strategy_filter)
+    if df is None:
+        st.error(f"⚠️ '{ticker}' 데이터를 불러올 수 없습니다. 티커명을 확인해주세요.")
+    else:
+        last, prev = df.iloc[-1], df.iloc[-2]
+        chg = last['Close'] - prev['Close']
+        chg_pct = (chg / prev['Close']) * 100
+        chg_color = "#EF4444" if chg >= 0 else "#3B82F6"
+        chg_sign = "+" if chg >= 0 else ""
+
+        atr_val = last['ATR']
+        tp_price = last['Close'] + (atr_val * tp_mult)
+        sl_price = last['Close'] - (atr_val * sl_mult)
+        tp_pct = ((tp_price - last['Close']) / last['Close']) * 100
+        sl_pct = ((sl_price - last['Close']) / last['Close']) * 100
+        rr_ratio = tp_mult / sl_mult
+
+        if last['Buy_Signal']:
+            status_html = f'<span class="badge-buy">{last["Signal_Reason"]}</span>'
+        elif last['Sell_Signal']:
+            status_html = f'<span class="badge-sell">{last["Signal_Reason"]}</span>'
+        else:
+            status_html = '<span class="badge-neutral">관망 / 대기</span>'
+
+        st.markdown(f"### 📈 {ticker} <span style='font-size:0.85rem; color:#94A3B8;'>({timeframe})</span> {status_html}", unsafe_allow_html=True)
+
+        bt_cnt, bt_win, bt_avg, bt_tot, bt_mdd, t_df = calc_backtest_metrics(df, hold_bars)
+        tot_color = "#10B981" if bt_tot > 0 else ("#EF4444" if bt_tot < 0 else "#94A3B8")
+
+        st.markdown(f"""
+        <div class="kpi-grid">
+            <div class="metric-card">
+                <div class="metric-title">현재가 (USD)</div>
+                <div class="metric-value">${last['Close']:,.2f} <span style="font-size:0.8rem; color:{chg_color};">({chg_sign}{chg_pct:.2f}%)</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">RSI (14) / ATR (14)</div>
+                <div class="metric-value">{last['RSI']:.1f} <span style="font-size:0.8rem; color:#94A3B8;">(${atr_val:.2f})</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">백테스트 승률 ({hold_bars}봉 보유)</div>
+                <div class="metric-value">{bt_win:.1f}% <span style="font-size:0.78rem; color:#94A3B8;">({bt_cnt}회 | 평균 {bt_avg:+.2f}%)</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">누적 수익률 / 최대낙폭(MDD)</div>
+                <div class="metric-value" style="color:{tot_color};">{bt_tot:+.2f}% <span style="font-size:0.78rem; color:#EF4444;">({bt_mdd:.2f}%)</span></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div class="tpsl-bar">
+            <div>
+                <div class="ohlc-lbl">🎯 추천 익절가 (TP +{tp_mult}ATR)</div>
+                <div class="ohlc-val" style="color:#10B981;">${tp_price:,.2f} (+{tp_pct:.2f}%)</div>
+            </div>
+            <div>
+                <div class="ohlc-lbl">🛡️ 추천 손절가 (SL -{sl_mult}ATR)</div>
+                <div class="ohlc-val" style="color:#EF4444;">${sl_price:,.2f} ({sl_pct:.2f}%)</div>
+            </div>
+            <div>
+                <div class="ohlc-lbl">⚖️ 손익비 (R:R)</div>
+                <div class="ohlc-val" style="color:#F59E0B;">1 : {rr_ratio:.2f}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.plotly_chart(render_tv_chart(df, timeframe, tp_price, sl_price), use_container_width=True, config={'displayModeBar': False})
+
+        col_a1, col_a2 = st.columns(2)
+        alert_text = (
+            f"📊 [{ticker} - {timeframe}] 퀀트 리포트\n"
+            f"• 현재가: ${last['Close']:,.2f} ({chg_sign}{chg_pct:.2f}%)\n"
+            f"• 상태: {last['Signal_Reason'] if last['Signal_Reason'] else '관망'}\n"
+            f"• 추천 TP: ${tp_price:,.2f} (+{tp_pct:.2f}%)\n"
+            f"• 추천 SL: ${sl_price:,.2f} ({sl_pct:.2f}%)"
+        )
+        with col_a1:
+            if st.button("💬 디스코드로 현재 분석 전송", use_container_width=True):
+                ok, msg = send_discord_alert(discord_webhook, alert_text)
+                st.toast(msg, icon="✅" if ok else "⚠️")
+        with col_a2:
+            if st.button("💛 카카오톡 나에게 전송", use_container_width=True):
+                ok, msg = send_kakao_alert(kakao_token, alert_text)
+                st.toast(msg, icon="✅" if ok else "⚠️")
+
+        st.markdown(f"#### 📈 백테스트 누적 수익 곡선 & MDD ({hold_bars}봉 보유 기준)")
+        if t_df.empty:
+            st.info("백테스트를 그릴 매수 시그널이 부족합니다.")
+        else:
+            st.plotly_chart(render_equity_chart(t_df, timeframe), use_container_width=True, config={'displayModeBar': False})
+
+        st.markdown(f"#### 🔔 최근 포착된 시그널 ({strategy_filter})")
+        signals = df[df['Buy_Signal'] | df['Sell_Signal']].tail(10).iloc[::-1]
+        if signals.empty:
+            st.info("선택한 전략 조건을 만족한 최근 시그널이 없습니다.")
+        else:
+            for idx, row in signals.iterrows():
+                ny_t = idx.tz_convert('America/New_York').strftime('%Y-%m-%d %H:%M') if timeframe != "일봉" else idx.tz_convert('America/New_York').strftime('%Y-%m-%d')
+                badge = '<span class="badge-buy">BUY</span>' if row['Buy_Signal'] else '<span class="badge-sell">SELL</span>'
+                sig_tp = row['Close'] + row['ATR'] * tp_mult
+                sig_sl = row['Close'] - row['ATR'] * sl_mult
+                st.markdown(f"""
+                <div class="list-card">
+                    <div class="list-top">
+                        <div>{badge} <strong style="margin-left:6px; font-size:0.85rem;">{row['Signal_Reason']}</strong></div>
+                        <div style="font-weight:700; color:#F8FAFC;">${row['Close']:,.2f}</div>
+                    </div>
+                    <div class="list-sub">
+                        <span>NY: {ny_t} | RSI: {row['RSI']:.1f}</span>
+                        <span>TP: ${sig_tp:,.2f} / SL: ${sig_sl:,.2f}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+with tab2:
+    st.markdown(f"#### 🔍 관심종목 실시간 스캔 ({timeframe})")
+    symbols = [s.strip().upper() for s in watchlist_str.split(",") if s.strip()]
+    auto_send_alert = st.checkbox("스캔 시 매수/매도 신호 포착 종목 자동 알림 발송 (디스코드/카톡)", value=False)
+
+    if st.button("🚀 전체 관심종목 지금 스캔하기", use_container_width=True):
+        scan_results = []
+        alert_lines = []
+        progress = st.progress(0)
+
+        for i, sym in enumerate(symbols):
+            sdf = load_single(sym, timeframe, strategy_filter)
+            if sdf is not None and len(sdf) >= 2:
+                slast, sprev = sdf.iloc[-1], sdf.iloc[-2]
+                schg_pct = ((slast['Close'] - sprev['Close']) / sprev['Close']) * 100
+                s_tp = slast['Close'] + slast['ATR'] * tp_mult
+                s_sl = slast['Close'] - slast['ATR'] * sl_mult
+
+                recent_df = sdf.tail(3)
+                sig_type, sig_msg, sig_time = "NEUTRAL", "특이 신호 없음", ""
+                for r_idx, r_row in recent_df.iloc[::-1].iterrows():
+                    if r_row['Buy_Signal']:
+                        sig_type = "BUY"
+                        sig_msg = r_row['Signal_Reason']
+                        sig_time = r_idx.tz_convert('America/New_York').strftime('%m-%d %H:%M') if timeframe != "일봉" else r_idx.tz_convert('America/New_York').strftime('%Y-%m-%d')
+                        alert_lines.append(f"🟢 [{sym}] {sig_msg} | 현재가 ${slast['Close']:,.2f} (TP ${s_tp:,.2f} / SL ${s_sl:,.2f})")
+                        break
+                    elif r_row['Sell_Signal']:
+                        sig_type = "SELL"
+                        sig_msg = r_row['Signal_Reason']
+                        sig_time = r_idx.tz_convert('America/New_York').strftime('%m-%d %H:%M') if timeframe != "일봉" else r_idx.tz_convert('America/New_York').strftime('%Y-%m-%d')
+                        alert_lines.append(f"🔴 [{sym}] {sig_msg} | 현재가 ${slast['Close']:,.2f}")
+                        break
+
+                scan_results.append({
+                    "sym": sym, "price": slast['Close'], "chg_pct": schg_pct,
+                    "rsi": slast['RSI'], "type": sig_type, "msg": sig_msg,
+                    "time": sig_time, "tp": s_tp, "sl": s_sl
+                })
+            progress.progress((i + 1) / len(symbols))
+        progress.empty()
+
+        if auto_send_alert and alert_lines:
+            summary_msg = f"🚨 [미국주식 퀀트 스캐너 - {timeframe}]\n" + "\n".join(alert_lines)
+            if discord_webhook:
+                ok, m = send_discord_alert(discord_webhook, summary_msg)
+                st.toast(m, icon="✅" if ok else "⚠️")
+            if kakao_token:
+                ok, m = send_kakao_alert(kakao_token, summary_msg)
+                st.toast(m, icon="✅" if ok else "⚠️")
+
+        order_map = {"BUY": 0, "SELL": 1, "NEUTRAL": 2}
+        scan_results.sort(key=lambda x: order_map[x["type"]])
+
+        for item in scan_results:
+            c_col = "#EF4444" if item["chg_pct"] >= 0 else "#3B82F6"
+            if item["type"] == "BUY":
+                b_html = f'<span class="badge-buy">{item["msg"]}</span>'
+            elif item["type"] == "SELL":
+                b_html = f'<span class="badge-sell">{item["msg"]}</span>'
+            else:
+                b_html = '<span class="badge-neutral">관망</span>'
+
+            t_str = f"포착: {item['time']} (NY)" if item['time'] else "최근 3봉 신호 없음"
+            st.markdown(f"""
+            <div class="list-card">
+                <div class="list-top">
+                    <div><strong style="font-size:0.95rem; color:#F8FAFC;">{item['sym']}</strong> <span style="margin-left:6px;">{b_html}</span></div>
+                    <div style="font-weight:700; color:#F8FAFC;">${item['price']:,.2f} <span style="font-size:0.78rem; color:{c_col};">({item['chg_pct']:+.2f}%)</span></div>
+                </div>
+                <div class="list-sub">
+                    <span>{t_str} | RSI: {item['rsi']:.1f}</span>
+                    <span>TP: ${item['tp']:,.2f} / SL: ${item['sl']:,.2f}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("상단의 **[🚀 전체 관심종목 지금 스캔하기]** 버튼을 누르면 모든 관심종목의 시그널과 추천 익절/손절가를 계산합니다.")
