@@ -73,7 +73,7 @@ def load_quant_data(sym, tf, s_filter, trend_on):
 
     hd, ld = df['High'].diff(), -df['Low'].diff()
     pdm, mdm = hd.where((hd > ld) & (hd > 0), 0.0), ld.where((ld > hd) & (ld > 0), 0.0)
-    df['TR'] = pd.concat([df['High'] - df['Low'], (df['High'] - df['Close'].shift(1)).abs(), (df['Low'] - df['Close'].shift(1)).abs()], axis=1).max(axis=1)
+    df['TR'] = pd.concat((df['High'] - df['Low'], (df['High'] - df['Close'].shift(1)).abs(), (df['Low'] - df['Close'].shift(1)).abs()), axis=1).max(axis=1)
     df['ATR'] = df['TR'].rolling(14).mean().bfill()
     atrs = df['TR'].ewm(alpha=1/14, adjust=False).mean().replace(0, np.nan)
     pdi, mdi = 100 * (pdm.ewm(alpha=1/14, adjust=False).mean() / atrs), 100 * (mdm.ewm(alpha=1/14, adjust=False).mean() / atrs)
@@ -92,7 +92,6 @@ def load_quant_data(sym, tf, s_filter, trend_on):
     fb = df.groupby('Date_Loc').first()
     orb_h, orb_l = fb['High'].to_dict(), fb['Low'].to_dict()
 
-    # 15분봉 전용 노이즈 필터링 임계값 조정
     is_15m = (tf == "15분봉")
     rsi_buy_1, rsi_buy_2 = (40, 38) if is_15m else (43, 41)
     rsi_sell_1, rsi_sell_2 = (65, 68) if is_15m else (62, 65)
@@ -102,7 +101,7 @@ def load_quant_data(sym, tf, s_filter, trend_on):
 
     for i in range(2, len(df)):
         idx, r, pv, pv2 = df.index[i], df.iloc[i], df.iloc[i-1], df.iloc[i-2]
-        rb, rs = [], []
+        rb, rs = list(), list()
         if r['Close'] > r['VWAP'] and (pv['RSI'] <= rsi_buy_1 or pv2['RSI'] <= rsi_buy_2) and r['Close'] > r['Open']:
             rb.append("VWAP+RSI 눌림")
         if r['EMA20'] > r['EMA50'] and r['ST_Up'] and (r['Low'] <= r['EMA20']*1.003) and r['Close'] > r['Open']:
@@ -127,8 +126,8 @@ def load_quant_data(sym, tf, s_filter, trend_on):
             rs.append("ORB 하단 이탈")
 
         if trend_on:
-            if not (r['Close'] > r['EMA200'] and r['ADX'] >= adx_min and r['RSI'] < 68.0): rb = []
-            if not (r['Close'] < r['EMA200'] and r['ADX'] >= adx_min and r['RSI'] > 32.0): rs = []
+            if not (r['Close'] > r['EMA200'] and r['ADX'] >= adx_min and r['RSI'] < 68.0): rb = list()
+            if not (r['Close'] < r['EMA200'] and r['ADX'] >= adx_min and r['RSI'] > 32.0): rs = list()
 
         if s_filter.startswith("🏆"):
             if rb:
@@ -139,14 +138,14 @@ def load_quant_data(sym, tf, s_filter, trend_on):
                 df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, tag + ", ".join(rs)
         else:
             key = s_filter.split(".").pop().strip()
-            mb = [x for x in rb if key in x]
-            ms = [x for x in rs if key in x]
+            mb = tuple(x for x in rb if key in x)
+            ms = tuple(x for x in rs if key in x)
             if mb: df.at[idx, 'Buy_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(mb)
             if ms and not mb: df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(ms)
     return df
 
 def run_bt(df_in, n_bars, tp_m, sl_m):
-    trades = []
+    trades = list()
     c_arr, h_arr, l_arr, a_arr = df_in['Close'].to_numpy(float), df_in['High'].to_numpy(float), df_in['Low'].to_numpy(float), df_in['ATR'].to_numpy(float)
     b_arr, s_arr = df_in['Buy_Signal'].to_numpy(bool), df_in['Sell_Signal'].to_numpy(bool)
     rsn_arr, idx_arr = df_in['Signal_Reason'].to_numpy(str), df_in.index
@@ -173,18 +172,18 @@ def run_bt(df_in, n_bars, tp_m, sl_m):
 st.markdown("#### ⚡ Global Quant Pro")
 
 with st.expander("⚙️ 종목 · 분봉 · 전략 설정", expanded=True):
-    c1, c2 = st.columns([1.2, 1.8])
+    c1, c2 = st.columns((1.2, 1.8))
     sym = c1.text_input("티커 (예: NVDA, 005930.KS)", value="NVDA").upper().strip()
-    tf = c2.radio("타임프레임", ["15분봉", "30분봉", "1시간봉"], index=0, horizontal=True)
+    tf = c2.radio("타임프레임", ("15분봉", "30분봉", "1시간봉"), index=0, horizontal=True)
 
-    s_filter = st.selectbox("전략 필터", [
+    s_filter = st.selectbox("전략 필터", (
         "🏆 전체 복합 전략 (강력신호 우선)",
         "1. VWAP+RSI",
         "2. EMA",
         "3. MACD+VWAP",
         "4. 볼린저",
         "5. ORB"
-    ])
+    ))
     c3, c4 = st.columns(2)
     trend_on = c3.checkbox("EMA200 + ADX 추세필터", value=True)
     auto_opt = c4.checkbox("승률 최적화 자동 탐색", value=True)
@@ -198,9 +197,10 @@ with st.expander("⚙️ 종목 · 분봉 · 전략 설정", expanded=True):
     if auto_opt:
         st.caption("🔧 자동 탐색 후보군 커스터마이징")
         o1, o2, o3 = st.columns(3)
-        nb_opts = o1.multiselect("보유봉 후보", [6, 8, 12, 16, 20, 24], default=[8, 12, 16, 24] if tf == "15분봉" else)
-        tp_opts = o2.multiselect("익절 배수 후보", [1.0, 1.5, 2.0, 2.5, 3.0], default=[1.5, 2.0, 2.5])
-        sl_opts = o3.multiselect("손절 배수 후보", [0.8, 1.0, 1.2, 1.5], default=[1.0, 1.5])
+        default_nb = (8, 12, 16, 24) if tf == "15분봉" else (6, 8, 12, 16)
+        nb_opts = o1.multiselect("보유봉 후보", (6, 8, 12, 16, 20, 24), default=default_nb)
+        tp_opts = o2.multiselect("익절 배수 후보", (1.0, 1.5, 2.0, 2.5, 3.0), default=(1.5, 2.0, 2.5))
+        sl_opts = o3.multiselect("손절 배수 후보", (0.8, 1.0, 1.2, 1.5), default=(1.0, 1.5))
 
     kakao_token = st.text_input("카카오톡 Access Token (선택)", type="password")
 
@@ -251,13 +251,13 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 plot_df = df.tail(100)
-fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
+fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=(0.75, 0.25), vertical_spacing=0.03)
 fig.add_trace(go.Candlestick(x=plot_df.index, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'], name="Price"), row=1, col=1)
 fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['EMA20'], line=dict(color='#38BDF8', width=1.2), name="EMA20"), row=1, col=1)
 fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['VWAP'], line=dict(color='#F59E0B', width=1.2, dash='dot'), name="VWAP"), row=1, col=1)
 
-buys = plot_df[plot_df['Buy_Signal']]
-sells = plot_df[plot_df['Sell_Signal']]
+buys = plot_df.loc[plot_df['Buy_Signal']]
+sells = plot_df.loc[plot_df['Sell_Signal']]
 fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.996, mode='markers', marker=dict(symbol='triangle-up', size=11, color='#10B981'), name="매수신호"), row=1, col=1)
 fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.004, mode='markers', marker=dict(symbol='triangle-down', size=11, color='#EF4444'), name="매도신호"), row=1, col=1)
 fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['RSI'], line=dict(color='#A855F7', width=1.2), name="RSI"), row=2, col=1)
@@ -287,7 +287,7 @@ else:
         """, unsafe_allow_html=True)
 
     if st.button("📲 최신 시그널 카카오톡 전송"):
-        latest_sig = recent.iloc[0]
+        latest_sig = recent.head(1).squeeze()
         msg = f"[{sym} {tf} 시그널]\n유형: {latest_sig['side']}\n전략: {latest_sig['reason']}\n진입가: {cur_fmt.format(latest_sig['entry'])}"
         ok, info = send_kakao(kakao_token, msg)
         st.success(info) if ok else st.warning(info)
