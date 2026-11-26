@@ -115,27 +115,5 @@ st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-
 
 st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-# 트레이딩뷰(TradingView) 실시간 캔들 차트 위젯 (30분봉 / 1시간봉 / 일봉 자동 연동)
 tv_interval = "30" if timeframe == "30분봉" else ("60" if timeframe == "1시간봉" else "D")
 
-tv_widget = f"""
-<div class="tradingview-widget-container" style="height:480px;width:100%;">
-  <div id="tradingview_chart" style="height:480px;width:100%;"></div>
-  <script type="text/javascript" src="https://tradingview.com"></script>
-  <script type="text/javascript">
-  new TradingView.widget({{
-    "width": "100%",
-    "height": 480,
-    "symbol": "{ticker}",
-    "interval": "{tv_interval}",
-    "timezone": "America/New_York",
-    "theme": "dark",
-    "style": "1",
-    "locale": "kr",
-    "toolbar_bg": "#131722",
-    "enable_publishing": false,
-    "hide_top_toolbar": false,
-    "hide_legend": false,
-    "save_image": false,
-    "backgroundColor": "#0B0E14",
-    "gridColor": "#1E293B",
