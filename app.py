@@ -35,7 +35,7 @@ label p, .stRadio label p, button[data-baseweb="tab"] p { color:#E2E8F0!importan
 .stButton>button { background-color:#1E293B!important; color:#F8FAFC!important; border:1px solid #334155!important; border-radius:8px!important; font-size:0.8rem!important; }
 </style>""", unsafe_allow_html=True)
 
-with st.expander("⚙️ 종목 / 전략 / ATR 리스크 / 알림 설정 (눌러서 열기)", expanded=False):
+with st.expander("⚙️ 종목 / 전략 / ATR 리스크 / 카카오톡 알림 설정", expanded=False):
     ticker = st.text_input("메인 분석 티커 (예: QQQ, NVDA, TSLA)", value="QQQ").upper().strip()
     timeframe = st.radio("봉 기준", ["30분봉", "1시간봉", "일봉"], horizontal=True)
     strategy_filter = st.selectbox(
@@ -52,22 +52,10 @@ with st.expander("⚙️ 종목 / 전략 / ATR 리스크 / 알림 설정 (눌러
 
     watchlist_str = st.text_input("스캐너 관심종목 (쉼표 구분)", value="QQQ, SPY, NVDA, TSLA, AAPL, MSFT, AMD, META")
     st.markdown("---")
-    discord_webhook = st.text_input("디스코드 웹훅 URL (선택)", type="password", placeholder="https://discord.com...")
     kakao_token = st.text_input("카카오톡 나에게 보내기 Access Token (선택)", type="password", placeholder="Kakao REST API Access Token")
 
     if st.button("🔄 데이터 새로고침", use_container_width=True):
         st.cache_data.clear()
-
-def send_discord_alert(webhook_url, msg):
-    if not webhook_url:
-        return False, "디스코드 웹훅 URL이 입력되지 않았습니다."
-    try:
-        res = requests.post(webhook_url, json={"content": msg}, timeout=5)
-        if res.status_code in (200, 204):
-            return True, "디스코드 알림 전송 성공!"
-        return False, f"디스코드 전송 실패 (코드: {res.status_code})"
-    except Exception as e:
-        return False, f"오류 발생: {e}"
 
 def send_kakao_alert(access_token, msg):
     if not access_token:
@@ -193,14 +181,14 @@ def load_single(symbol, tf, strat_filter):
                 if rs:
                     df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rs)
     return df
-
 def calc_backtest_metrics(df_in, n_bars):
-    buy_indices = np.where(df_in['Buy_Signal'])[0]
+    buy_indices = np.where(df_in['Buy_Signal'].values)
     trades = []
     for idx in buy_indices:
+        idx = int(idx)
         if idx + n_bars < len(df_in):
-            entry_p = df_in['Close'].iloc[idx]
-            exit_p = df_in['Close'].iloc[idx + n_bars]
+            entry_p = float(df_in['Close'].iloc[idx])
+            exit_p = float(df_in['Close'].iloc[idx + n_bars])
             exit_dt = df_in.index[idx + n_bars]
             ret = (exit_p - entry_p) / entry_p
             trades.append({"date": exit_dt, "ret": ret})
@@ -214,27 +202,27 @@ def calc_backtest_metrics(df_in, n_bars):
     t_df['peak'] = t_df['cum_equity'].cummax()
     t_df['dd_pct'] = ((t_df['cum_equity'] - t_df['peak']) / t_df['peak']) * 100
 
-    win_rate = (t_df['ret'] > 0).mean() * 100
-    avg_ret = t_df['ret'].mean() * 100
-    total_ret = t_df['cum_ret_pct'].iloc[-1]
-    mdd = t_df['dd_pct'].min()
+    win_rate = float((t_df['ret'] > 0).mean() * 100)
+    avg_ret = float(t_df['ret'].mean() * 100)
+    total_ret = float(t_df['cum_ret_pct'].iloc[-1])
+    mdd = float(t_df['dd_pct'].min())
     return len(t_df), win_rate, avg_ret, total_ret, mdd, t_df
 
 def render_tv_chart(df_in, tf, tp_price, sl_price):
     pdf = df_in.tail(75).copy()
     ny_idx = pdf.index.tz_convert('America/New_York')
-    x_lbl = ny_idx.strftime('%m-%d %H:%M') if tf != "일봉" else ny_idx.strftime('%Y-%m-%d')
+    x_lbl = ny_idx.strftime('%m-%d %H:%M').tolist() if tf != "일봉" else ny_idx.strftime('%Y-%m-%d').tolist()
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.78, 0.22])
     fig.add_trace(go.Candlestick(
-        x=x_lbl, open=pdf['Open'], high=pdf['High'], low=pdf['Low'], close=pdf['Close'],
+        x=x_lbl, open=pdf['Open'].tolist(), high=pdf['High'].tolist(), low=pdf['Low'].tolist(), close=pdf['Close'].tolist(),
         increasing_line_color='#EF4444', decreasing_line_color='#3B82F6',
         increasing_fillcolor='#EF4444', decreasing_fillcolor='#3B82F6', name="가격"
     ), row=1, col=1)
 
-    fig.add_trace(go.Scatter(x=x_lbl, y=pdf['EMA20'], line=dict(color='#F59E0B', width=1.1), name="EMA20"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=x_lbl, y=pdf['EMA50'], line=dict(color='#10B981', width=1.1), name="EMA50"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=x_lbl, y=pdf['VWAP'], line=dict(color='#A855F7', width=1.2, dash='dot'), name="VWAP"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=x_lbl, y=pdf['EMA20'].tolist(), line=dict(color='#F59E0B', width=1.1), name="EMA20"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=x_lbl, y=pdf['EMA50'].tolist(), line=dict(color='#10B981', width=1.1), name="EMA50"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=x_lbl, y=pdf['VWAP'].tolist(), line=dict(color='#A855F7', width=1.2, dash='dot'), name="VWAP"), row=1, col=1)
 
     fig.add_hline(y=tp_price, line_dash="dash", line_color="#10B981", line_width=1,
                   annotation_text=f"TP ${tp_price:.2f}", annotation_position="top left",
@@ -246,25 +234,25 @@ def render_tv_chart(df_in, tf, tp_price, sl_price):
     buys = pdf[pdf['Buy_Signal']]
     if not buys.empty:
         b_idx = buys.index.tz_convert('America/New_York')
-        b_x = b_idx.strftime('%m-%d %H:%M') if tf != "일봉" else b_idx.strftime('%Y-%m-%d')
+        b_x = b_idx.strftime('%m-%d %H:%M').tolist() if tf != "일봉" else b_idx.strftime('%Y-%m-%d').tolist()
         fig.add_trace(go.Scatter(
-            x=b_x, y=buys['Low'] * 0.997, mode='markers',
+            x=b_x, y=(buys['Low'] * 0.997).tolist(), mode='markers',
             marker=dict(symbol='triangle-up', size=11, color='#10B981'),
-            text=buys['Signal_Reason'], hoverinfo='text+x+y', name="매수신호"
+            text=buys['Signal_Reason'].tolist(), hoverinfo='text+x+y', name="매수신호"
         ), row=1, col=1)
 
     sells = pdf[pdf['Sell_Signal']]
     if not sells.empty:
         s_idx = sells.index.tz_convert('America/New_York')
-        s_x = s_idx.strftime('%m-%d %H:%M') if tf != "일봉" else s_idx.strftime('%Y-%m-%d')
+        s_x = s_idx.strftime('%m-%d %H:%M').tolist() if tf != "일봉" else s_idx.strftime('%Y-%m-%d').tolist()
         fig.add_trace(go.Scatter(
-            x=s_x, y=sells['High'] * 1.003, mode='markers',
+            x=s_x, y=(sells['High'] * 1.003).tolist(), mode='markers',
             marker=dict(symbol='triangle-down', size=11, color='#EF4444'),
-            text=sells['Signal_Reason'], hoverinfo='text+x+y', name="매도신호"
+            text=sells['Signal_Reason'].tolist(), hoverinfo='text+x+y', name="매도신호"
         ), row=1, col=1)
 
     vol_colors = ['#EF4444' if c >= o else '#3B82F6' for c, o in zip(pdf['Close'], pdf['Open'])]
-    fig.add_trace(go.Bar(x=x_lbl, y=pdf['Volume'], marker_color=vol_colors, name="거래량", showlegend=False), row=2, col=1)
+    fig.add_trace(go.Bar(x=x_lbl, y=pdf['Volume'].tolist(), marker_color=vol_colors, name="거래량", showlegend=False), row=2, col=1)
 
     fig.update_layout(
         template="plotly_dark", paper_bgcolor="#0B0E14", plot_bgcolor="#131722",
@@ -276,11 +264,30 @@ def render_tv_chart(df_in, tf, tp_price, sl_price):
     return fig
 
 def render_equity_chart(t_df, tf):
-    ny_idx = pd.DatetimeIndex(t_df['date']).tz_convert('America/New_York')
-    x_lbl = ny_idx.strftime('%m-%d %H:%M') if tf != "일봉" else ny_idx.strftime('%Y-%m-%d')
+    dt_series = pd.to_datetime(t_df['date'], utc=True).dt.tz_convert('America/New_York')
+    x_lbl = dt_series.dt.strftime('%m-%d %H:%M').tolist() if tf != "일봉" else dt_series.dt.strftime('%Y-%m-%d').tolist()
+    y_ret = t_df['cum_ret_pct'].astype(float).tolist()
+    y_dd = t_df['dd_pct'].astype(float).tolist()
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.06, row_heights=[0.65, 0.35])
-tab1, tab2 = st.tabs(["📊 종목 분석 & 리스크/백테스트", "🔍 멀티 스캐너 & 실시간 알림"])
+    fig.add_trace(go.Scatter(
+        x=x_lbl, y=y_ret, mode='lines+markers',
+        line=dict(color='#10B981', width=2), fill='tozeroy', fillcolor='rgba(16, 185, 129, 0.12)', name="누적 수익률(%)"
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=x_lbl, y=y_dd, mode='lines',
+        line=dict(color='#EF4444', width=1.5), fill='tozeroy', fillcolor='rgba(239, 68, 68, 0.18)', name="낙폭 DD(%)"
+    ), row=2, col=1)
+
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor="#0B0E14", plot_bgcolor="#131722",
+        margin=dict(l=5, r=5, t=10, b=10), height=280, showlegend=False
+    )
+    fig.update_xaxes(type='category', tickangle=-45, nticks=6, showgrid=True, gridcolor='#1E293B')
+    fig.update_yaxes(showgrid=True, gridcolor='#1E293B', side='right')
+    return fig
+tab1, tab2 = st.tabs(["📊 종목 분석 & 백테스트", "🔍 멀티 스캐너 & 카톡 알림"])
 
 with tab1:
     df = load_single(ticker, timeframe, strategy_filter)
@@ -352,7 +359,6 @@ with tab1:
 
         st.plotly_chart(render_tv_chart(df, timeframe, tp_price, sl_price), use_container_width=True, config={'displayModeBar': False})
 
-        col_a1, col_a2 = st.columns(2)
         alert_text = (
             f"📊 [{ticker} - {timeframe}] 퀀트 리포트\n"
             f"• 현재가: ${last['Close']:,.2f} ({chg_sign}{chg_pct:.2f}%)\n"
@@ -360,14 +366,9 @@ with tab1:
             f"• 추천 TP: ${tp_price:,.2f} (+{tp_pct:.2f}%)\n"
             f"• 추천 SL: ${sl_price:,.2f} ({sl_pct:.2f}%)"
         )
-        with col_a1:
-            if st.button("💬 디스코드로 현재 분석 전송", use_container_width=True):
-                ok, msg = send_discord_alert(discord_webhook, alert_text)
-                st.toast(msg, icon="✅" if ok else "⚠️")
-        with col_a2:
-            if st.button("💛 카카오톡 나에게 전송", use_container_width=True):
-                ok, msg = send_kakao_alert(kakao_token, alert_text)
-                st.toast(msg, icon="✅" if ok else "⚠️")
+        if st.button("💛 카카오톡 나에게 현재 분석 전송", use_container_width=True):
+            ok, msg = send_kakao_alert(kakao_token, alert_text)
+            st.toast(msg, icon="✅" if ok else "⚠️")
 
         st.markdown(f"#### 📈 백테스트 누적 수익 곡선 & MDD ({hold_bars}봉 보유 기준)")
         if t_df.empty:
@@ -397,10 +398,11 @@ with tab1:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+
 with tab2:
     st.markdown(f"#### 🔍 관심종목 실시간 스캔 ({timeframe})")
     symbols = [s.strip().upper() for s in watchlist_str.split(",") if s.strip()]
-    auto_send_alert = st.checkbox("스캔 시 매수/매도 신호 포착 종목 자동 알림 발송 (디스코드/카톡)", value=False)
+    auto_send_alert = st.checkbox("스캔 시 신호 포착 종목 카카오톡 자동 알림 발송", value=False)
 
     if st.button("🚀 전체 관심종목 지금 스캔하기", use_container_width=True):
         scan_results = []
@@ -422,13 +424,13 @@ with tab2:
                         sig_type = "BUY"
                         sig_msg = r_row['Signal_Reason']
                         sig_time = r_idx.tz_convert('America/New_York').strftime('%m-%d %H:%M') if timeframe != "일봉" else r_idx.tz_convert('America/New_York').strftime('%Y-%m-%d')
-                        alert_lines.append(f"🟢 [{sym}] {sig_msg} | 현재가 ${slast['Close']:,.2f} (TP ${s_tp:,.2f} / SL ${s_sl:,.2f})")
+                        alert_lines.append(f"🟢 [{sym}] {sig_msg} | ${slast['Close']:,.2f} (TP ${s_tp:,.2f} / SL ${s_sl:,.2f})")
                         break
                     elif r_row['Sell_Signal']:
                         sig_type = "SELL"
                         sig_msg = r_row['Signal_Reason']
                         sig_time = r_idx.tz_convert('America/New_York').strftime('%m-%d %H:%M') if timeframe != "일봉" else r_idx.tz_convert('America/New_York').strftime('%Y-%m-%d')
-                        alert_lines.append(f"🔴 [{sym}] {sig_msg} | 현재가 ${slast['Close']:,.2f}")
+                        alert_lines.append(f"🔴 [{sym}] {sig_msg} | ${slast['Close']:,.2f}")
                         break
 
                 scan_results.append({
@@ -439,14 +441,10 @@ with tab2:
             progress.progress((i + 1) / len(symbols))
         progress.empty()
 
-        if auto_send_alert and alert_lines:
-            summary_msg = f"🚨 [미국주식 퀀트 스캐너 - {timeframe}]\n" + "\n".join(alert_lines)
-            if discord_webhook:
-                ok, m = send_discord_alert(discord_webhook, summary_msg)
-                st.toast(m, icon="✅" if ok else "⚠️")
-            if kakao_token:
-                ok, m = send_kakao_alert(kakao_token, summary_msg)
-                st.toast(m, icon="✅" if ok else "⚠️")
+        if auto_send_alert and alert_lines and kakao_token:
+            summary_msg = f"🚨 [미국주식 스캐너 - {timeframe}]\n" + "\n".join(alert_lines)
+            ok, m = send_kakao_alert(kakao_token, summary_msg)
+            st.toast(m, icon="✅" if ok else "⚠️")
 
         order_map = {"BUY": 0, "SELL": 1, "NEUTRAL": 2}
         scan_results.sort(key=lambda x: order_map[x["type"]])
