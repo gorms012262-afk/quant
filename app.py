@@ -114,17 +114,7 @@ st.markdown(f'<div class="kpi-grid"><div class="metric-card"><div class="metric-
 
 st.markdown(f'<div class="ohlc-bar"><div><div class="ohlc-lbl">시가</div><div class="ohlc-val">${latest["Open"]:,.2f}</div></div><div><div class="ohlc-lbl">고가</div><div class="ohlc-val" style="color:#EF4444;">${latest["High"]:,.2f}</div></div><div><div class="ohlc-lbl">저가</div><div class="ohlc-val" style="color:#3B82F6;">${latest["Low"]:,.2f}</div></div><div><div class="ohlc-lbl">VWAP</div><div class="ohlc-val" style="color:#38BDF8;">${latest["VWAP"]:,.2f}</div></div></div>', unsafe_allow_html=True)
 
-# 트레이딩뷰 최신 공식 Embed 위젯 (아이폰 Safari & Streamlit Cloud 100% 호환)
 tv_interval = "30" if timeframe == "30분봉" else ("60" if timeframe == "1시간봉" else "D")
 nyse_list = ["SPY", "DIA", "IWM", "BRK-B", "JPM", "V", "MA", "WMT", "UNH", "XOM", "KO", "DIS", "BA", "NKE", "ORCL", "CRM"]
 tv_symbol = ticker if ":" in ticker else (f"AMEX:{ticker}" if ticker in ["SPY", "DIA", "IWM", "SOXL", "TQQQ", "SQQQ"] else (f"NYSE:{ticker}" if ticker in nyse_list else f"NASDAQ:{ticker}"))
 
-tv_html = f"""
-<!DOCTYPE html>
-<html>
-<head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#0B0E14;">
-<div class="tradingview-widget-container" style="height:480px;width:100%;">
-  <div class="tradingview-widget-container__widget" style="height:480px;width:100%;"></div>
-  <script type="text/javascript" src="https://tradingview.com" async>
-  {{
