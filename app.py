@@ -32,6 +32,9 @@ header[data-testid="stHeader"] {
 .badge-buy { background-color: rgba(16,185,129,0.15); color: #10B981; border: 1px solid #10B981; padding: 3px 8px; border-radius: 6px; font-size: 0.78rem; font-weight: 600; display: inline-block; }
 .badge-sell { background-color: rgba(239,68,68,0.15); color: #EF4444; border: 1px solid #EF4444; padding: 3px 8px; border-radius: 6px; font-size: 0.78rem; font-weight: 600; display: inline-block; }
 .badge-neutral { background-color: rgba(148,163,184,0.15); color: #94A3B8; border: 1px solid #475569; padding: 3px 8px; border-radius: 6px; font-size: 0.78rem; font-weight: 600; display: inline-block; }
+.ohlc-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; background-color: #0B0E14; border: 1px solid #1E293B; border-radius: 8px; padding: 8px; margin-bottom: 10px; text-align: center; }
+.ohlc-lbl { font-size: 0.7rem; color: #64748B; }
+.ohlc-val { font-size: 0.85rem; font-weight: 700; color: #F8FAFC; }
 div[data-testid="stVerticalBlockBorderWrapper"] { background-color: #131722 !important; border: 1px solid #1E293B !important; border-radius: 10px !important; padding: 12px !important; }
 div[data-baseweb="input"] > div, div[data-baseweb="select"] > div { background-color: #F8FAFC !important; color: #0B0E14 !important; border-radius: 8px !important; }
 div[data-baseweb="input"] input { color: #0B0E14 !important; font-weight: 600 !important; }
@@ -184,15 +187,3 @@ st.markdown(f"""
         <div class="metric-value" style="font-size:0.9rem;color:#10B981;">{last_buy_reason}</div>
     </div>
     <div class="metric-card">
-        <div class="metric-title">RSI(14) / 매도({last_sell_str})</div>
-        <div class="metric-value" style="color:{rsi_col};">{rsi_val:.1f}</div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown(f"#### 📊 {ticker} 실시간 차트 ({timeframe})")
-
-plot_df = df.tail(55).copy()
-plot_idx = plot_df.index
-plot_df = plot_df.reset_index(drop=True)
-
