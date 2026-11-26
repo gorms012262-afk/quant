@@ -426,7 +426,6 @@ with tab1:
         </div>
         """, unsafe_allow_html=True)
 
-        # 종목별 최적 손절/익절 배수 자동 탐색 기능
         if st.button(f"✨ {ticker} 최적 손절/익절 ATR 배수 자동 탐색하기", use_container_width=True):
             opt_list = optimize_atr_params(df, hold_bars)
             if not opt_list:
@@ -472,7 +471,7 @@ with tab1:
             ok, msg = send_kakao_alert(kakao_token, alert_text)
             st.toast(msg, icon="✅" if ok else "⚠️")
 
-        st.markdown(f"#### 📈 정밀 백테스트 누적 수익 곡선 & MDD (TP/SL 적용)")
+        st.markdown("#### 📈 정밀 백테스트 누적 수익 곡선 & MDD (TP/SL 적용)")
         if t_df.empty:
             st.info("백테스트를 그릴 매수 시그널이 부족합니다. (설정에서 ADX 필터를 끄면 더 많은 신호가 탐색됩니다.)")
         else:
