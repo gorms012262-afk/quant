@@ -32,13 +32,11 @@ div[data-testid="stExpander"]{background:#131722!important;border:1px solid #1E2
 div[data-testid="stExpander"] summary p,label p,.stRadio label p,.stCheckbox label p{color:#F8FAFC!important;font-size:.82rem!important}
 </style>""", unsafe_allow_html=True)
 
-def send_kakao(token, msg):
-    if not token: return False, "카카오톡 토큰을 입력해 주세요."
+def send_discord(webhook_url, msg):
+    if not webhook_url: return False, "디스코드 웹훅 URL을 입력해 주세요."
     try:
-        url = "https://kakao.com"
-        payload = {"object_type": "text", "text": msg[:200], "link": {"web_url": "https://yahoo.com", "mobile_web_url": "https://yahoo.com"}}
-        r = requests.post(url, headers={"Authorization": f"Bearer {token}"}, data={"template_object": json.dumps(payload)}, timeout=5)
-        return (True, "카톡 전송 완료!") if r.status_code == 200 else (False, f"전송 실패: {r.text}")
+        r = requests.post(webhook_url.strip(), json={"content": msg}, timeout=5)
+        return (True, "디스코드 전송 완료!") if r.status_code in (200, 204) else (False, f"전송 실패 ({r.status_code}): {r.text}")
     except Exception as e:
         return False, str(e)
 @st.cache_data(ttl=15)
@@ -213,8 +211,8 @@ with st.expander("⚙️ 종목 · 분봉 · 레버리지 단타 설정", expand
     sl_m = b3.number_input("손절(ATR)", 0.5, 3.0, 1.0, 0.5)
 
     k1, k2 = st.columns((1.8, 1.2))
-    kakao_token = k1.text_input("카카오톡 Access Token", type="password")
-    auto_kakao = k2.checkbox("장중 익절·손절 즉시 카톡", value=False)
+    discord_url = k1.text_input("디스코드 Webhook URL", type="password")
+    auto_discord = k2.checkbox("장중 익절·손절 즉시 알림", value=False)
 
 tab1, tab2 = st.tabs(("📊 메인 종목 분석", "🔍 워치리스트 스캔"))
 
@@ -257,8 +255,8 @@ with tab1:
         else:
             st.markdown(f"<div class='alert-run'>⏳ <b>[진행 중 포지션 실시간 감시] {sym} ({lv['side']})</b><br>진입 {cur_fmt.format(lv['entry'])} | 현재 {cur_fmt.format(last['Close'])} (<b>{lv['pnl']:+.2f}%</b>) · 목표 {cur_fmt.format(lv['tp'])} / 손절 {cur_fmt.format(lv['sl'])}</div>", unsafe_allow_html=True)
 
-        if auto_kakao and kakao_token and lv['res'] != "⏳진행중" and a_key not in st.session_state["sent_alerts"]:
-            ok, _ = send_kakao(kakao_token, f"[{sym} {tf} {lv['res']}]\n진입: {cur_fmt.format(lv['entry'])}\n수익률: {lv['pnl']:+.2f}%")
+        if auto_discord and discord_url and lv['res'] != "⏳진행중" and a_key not in st.session_state["sent_alerts"]:
+            ok, _ = send_discord(discord_url, f"🚨 **[{sym} {tf} {lv['res']}]**\n• 진입가: `{cur_fmt.format(lv['entry'])}`\n• 수익률: **{lv['pnl']:+.2f}%**")
             if ok: st.session_state["sent_alerts"].add(a_key)
 
     win_rate = (bt['pnl'] > 0).mean() * 100 if not bt.empty else 0.0
@@ -323,9 +321,10 @@ with tab1:
               </div>
             </div>""", unsafe_allow_html=True)
 
-        if st.button("📲 최신 시그널 카카오톡 전송"):
+        if st.button("📲 최신 시그널 디스코드 전송"):
             ls = recent.head(1).squeeze()
-            ok, info = send_kakao(kakao_token, f"[{sym} {tf} 시그널]\n{ls['reason']}\n진입: {cur_fmt.format(ls['entry'])} ({ls['res']} {ls['pnl']:+.2f}%)")
+            side_kr = "🟢 매수" if ls['side'] == "BUY" else "🔴 매도"
+            ok, info = send_discord(discord_url, f"⚡ **[{sym} {tf} {side_kr} 시그널]**\n• 전략: {ls['reason']}\n• 진입가: `{cur_fmt.format(ls['entry'])}`\n• 목표가: `{cur_fmt.format(ls['tp'])}` / 손절가: `{cur_fmt.format(ls['sl'])}`\n• 현재결과: {ls['res']} (**{ls['pnl']:+.2f}%**)")
             if ok:
                 st.success(info)
             else:
