@@ -36,7 +36,6 @@ def send_kakao(token, msg):
         return (True, "카톡 전송 완료!") if r.status_code == 200 else (False, f"전송 실패: {r.text}")
     except Exception as e:
         return False, str(e)
-
 @st.cache_data(ttl=60)
 def load_quant_data(sym, tf, s_filter, trend_on):
     p, iv = ("1mo", "30m") if tf == "30분봉" else ("3mo", "1h")
@@ -144,6 +143,12 @@ def find_best_params(df_in):
             for tm in (1.2, 1.5, 2.0, 2.5, 3.0):
                 c, w, a, t, m, _ = run_bt(df_in, hb, tm, sm)
                 if c > 0:
+                    k = (1 if c >= 3 else 0, round(w, 1), round(t, 2))
+                    if best is None or k > best["k"]:
+                        best = {"k": k, "hb": hb, "sl": sm, "tp": tm, "win": w, "tot": t, "cnt": c}
+    return best
+
+st.empty()
 if "hold_bars" not in st.session_state: st.session_state.hold_bars = 8
 if "sl_mult" not in st.session_state: st.session_state.sl_mult = 1.2
 if "tp_mult" not in st.session_state: st.session_state.tp_mult = 2.0
@@ -218,6 +223,7 @@ with tab1:
         <div><div class="ohlc-lbl">🛡️ 손절가</div><div class="ohlc-val" style="color:#EF4444;">${sl_p:,.2f}</div></div>
         <div><div class="ohlc-lbl">⚖️ 손익비(R:R)</div><div class="ohlc-val" style="color:#F59E0B;">1 : {tp_mult/sl_mult:.2f}</div></div>
         </div>""", unsafe_allow_html=True)
+
         pdf = df.tail(80)
         xl = pdf.index.tz_convert('America/New_York').strftime('%m-%d %H:%M').tolist()
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.78, 0.22])
@@ -235,7 +241,6 @@ with tab1:
         fig.update_layout(template="plotly_dark", paper_bgcolor="#0B0E14", plot_bgcolor="#131722", height=400, margin=dict(l=5,r=5,t=10,b=10), xaxis_rangeslider_visible=False)
         fig.update_xaxes(type='category', nticks=6)
         st.plotly_chart(fig, use_container_width=True)
-
         if st.button("💛 카톡으로 현재 분석 전송", use_container_width=True):
             ok, m = send_kakao(kakao_token, f"[{ticker} {timeframe}] ${last['Close']:,.2f} ({chg_pct:+.2f}%)\n최적보유:{hold_bars}봉 | 승률:{win:.1f}%\n신호: {last['Signal_Reason'] or '청산/관망'}\n목표: ${tp_p:,.2f} / 손절: ${sl_p:,.2f}")
             st.toast(m)
