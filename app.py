@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests, json
 
-st.set_page_config(page_title="Global Quant Pro - Live Alert", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Global Quant Pro", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""<style>
 .stApp{background:#0B0E14;color:#E2E8F0}header[data-testid="stHeader"]{background:#0B0E14}
 .block-container{padding:2.6rem .8rem 2rem .8rem!important}
@@ -36,22 +36,14 @@ def send_kakao(token, msg):
     if not token: return False, "카카오톡 토큰을 입력해 주세요."
     try:
         url = "https://kakao.com"
-        payload = {
-            "object_type": "text",
-            "text": msg[:200],
-            "link": {"web_url": "https://yahoo.com", "mobile_web_url": "https://yahoo.com"}
-        }
+        payload = {"object_type": "text", "text": msg[:200], "link": {"web_url": "https://yahoo.com", "mobile_web_url": "https://yahoo.com"}}
         r = requests.post(url, headers={"Authorization": f"Bearer {token}"}, data={"template_object": json.dumps(payload)}, timeout=5)
         return (True, "카톡 전송 완료!") if r.status_code == 200 else (False, f"전송 실패: {r.text}")
     except Exception as e:
         return False, str(e)
 @st.cache_data(ttl=15)
 def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
-    tf_map = {
-        "15분봉": ("1mo", "15m"),
-        "30분봉": ("1mo", "30m"),
-        "1시간봉": ("3mo", "1h")
-    }
+    tf_map = {"15분봉": ("1mo", "15m"), "30분봉": ("1mo", "30m"), "1시간봉": ("3mo", "1h")}
     p, iv = tf_map.get(tf, ("3mo", "1h"))
 
     raw = yf.download(sym, period=p, interval=iv, progress=False, auto_adjust=True)
