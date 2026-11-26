@@ -182,14 +182,17 @@ def load_single(symbol, tf, strat_filter):
                     df.at[idx, 'Sell_Signal'], df.at[idx, 'Signal_Reason'] = True, ", ".join(rs)
     return df
 def calc_backtest_metrics(df_in, n_bars):
-    buy_indices = np.where(df_in['Buy_Signal'].values)
+    buy_indices = np.flatnonzero(df_in['Buy_Signal'].to_numpy())
     trades = []
-    for idx in buy_indices:
-        idx = int(idx)
-        if idx + n_bars < len(df_in):
-            entry_p = float(df_in['Close'].iloc[idx])
-            exit_p = float(df_in['Close'].iloc[idx + n_bars])
-            exit_dt = df_in.index[idx + n_bars]
+    close_arr = df_in['Close'].to_numpy(dtype=float)
+    idx_arr = df_in.index
+
+    for pos in buy_indices:
+        pos_int = int(pos)
+        if pos_int + n_bars < len(df_in):
+            entry_p = close_arr.item(pos_int)
+            exit_p = close_arr.item(pos_int + n_bars)
+            exit_dt = idx_arr[pos_int + n_bars]
             ret = (exit_p - entry_p) / entry_p
             trades.append({"date": exit_dt, "ret": ret})
 
@@ -197,13 +200,13 @@ def calc_backtest_metrics(df_in, n_bars):
         return 0, 0.0, 0.0, 0.0, 0.0, pd.DataFrame()
 
     t_df = pd.DataFrame(trades)
-    t_df['cum_equity'] = (1 + t_df['ret']).cumprod()
-    t_df['cum_ret_pct'] = (t_df['cum_equity'] - 1) * 100
+    t_df['cum_equity'] = (1.0 + t_df['ret']).cumprod()
+    t_df['cum_ret_pct'] = (t_df['cum_equity'] - 1.0) * 100.0
     t_df['peak'] = t_df['cum_equity'].cummax()
-    t_df['dd_pct'] = ((t_df['cum_equity'] - t_df['peak']) / t_df['peak']) * 100
+    t_df['dd_pct'] = ((t_df['cum_equity'] - t_df['peak']) / t_df['peak']) * 100.0
 
-    win_rate = float((t_df['ret'] > 0).mean() * 100)
-    avg_ret = float(t_df['ret'].mean() * 100)
+    win_rate = float((t_df['ret'] > 0).mean() * 100.0)
+    avg_ret = float(t_df['ret'].mean() * 100.0)
     total_ret = float(t_df['cum_ret_pct'].iloc[-1])
     mdd = float(t_df['dd_pct'].min())
     return len(t_df), win_rate, avg_ret, total_ret, mdd, t_df
@@ -295,16 +298,16 @@ with tab1:
         st.error(f"⚠️ '{ticker}' 데이터를 불러올 수 없습니다. 티커명을 확인해주세요.")
     else:
         last, prev = df.iloc[-1], df.iloc[-2]
-        chg = last['Close'] - prev['Close']
-        chg_pct = (chg / prev['Close']) * 100
+        chg = float(last['Close'] - prev['Close'])
+        chg_pct = float((chg / prev['Close']) * 100.0)
         chg_color = "#EF4444" if chg >= 0 else "#3B82F6"
         chg_sign = "+" if chg >= 0 else ""
 
-        atr_val = last['ATR']
-        tp_price = last['Close'] + (atr_val * tp_mult)
-        sl_price = last['Close'] - (atr_val * sl_mult)
-        tp_pct = ((tp_price - last['Close']) / last['Close']) * 100
-        sl_pct = ((sl_price - last['Close']) / last['Close']) * 100
+        atr_val = float(last['ATR'])
+        tp_price = float(last['Close']) + (atr_val * tp_mult)
+        sl_price = float(last['Close']) - (atr_val * sl_mult)
+        tp_pct = ((tp_price - float(last['Close'])) / float(last['Close'])) * 100.0
+        sl_pct = ((sl_price - float(last['Close'])) / float(last['Close'])) * 100.0
         rr_ratio = tp_mult / sl_mult
 
         if last['Buy_Signal']:
@@ -384,8 +387,8 @@ with tab1:
             for idx, row in signals.iterrows():
                 ny_t = idx.tz_convert('America/New_York').strftime('%Y-%m-%d %H:%M') if timeframe != "일봉" else idx.tz_convert('America/New_York').strftime('%Y-%m-%d')
                 badge = '<span class="badge-buy">BUY</span>' if row['Buy_Signal'] else '<span class="badge-sell">SELL</span>'
-                sig_tp = row['Close'] + row['ATR'] * tp_mult
-                sig_sl = row['Close'] - row['ATR'] * sl_mult
+                sig_tp = float(row['Close']) + float(row['ATR']) * tp_mult
+                sig_sl = float(row['Close']) - float(row['ATR']) * sl_mult
                 st.markdown(f"""
                 <div class="list-card">
                     <div class="list-top">
@@ -413,9 +416,9 @@ with tab2:
             sdf = load_single(sym, timeframe, strategy_filter)
             if sdf is not None and len(sdf) >= 2:
                 slast, sprev = sdf.iloc[-1], sdf.iloc[-2]
-                schg_pct = ((slast['Close'] - sprev['Close']) / sprev['Close']) * 100
-                s_tp = slast['Close'] + slast['ATR'] * tp_mult
-                s_sl = slast['Close'] - slast['ATR'] * sl_mult
+                schg_pct = ((float(slast['Close']) - float(sprev['Close'])) / float(sprev['Close'])) * 100.0
+                s_tp = float(slast['Close']) + float(slast['ATR']) * tp_mult
+                s_sl = float(slast['Close']) - float(slast['ATR']) * sl_mult
 
                 recent_df = sdf.tail(3)
                 sig_type, sig_msg, sig_time = "NEUTRAL", "특이 신호 없음", ""
@@ -434,8 +437,8 @@ with tab2:
                         break
 
                 scan_results.append({
-                    "sym": sym, "price": slast['Close'], "chg_pct": schg_pct,
-                    "rsi": slast['RSI'], "type": sig_type, "msg": sig_msg,
+                    "sym": sym, "price": float(slast['Close']), "chg_pct": schg_pct,
+                    "rsi": float(slast['RSI']), "type": sig_type, "msg": sig_msg,
                     "time": sig_time, "tp": s_tp, "sl": s_sl
                 })
             progress.progress((i + 1) / len(symbols))
