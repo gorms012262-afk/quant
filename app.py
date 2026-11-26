@@ -169,12 +169,27 @@ def run_bt(df_in, n_bars, tp_m, sl_m):
         pnl = ((exit_p - entry) / entry * 100) if side == "BUY" else ((entry - exit_p) / entry * 100)
         trades.append({"time": idx_arr[i], "side": side, "reason": rsn_arr[i], "entry": entry, "exit": exit_p, "res": res, "pnl": pnl})
     return pd.DataFrame(trades)
+
+def calc_bt_metrics(bt_df):
+    if bt_df.empty:
+        return 0.0, 0.0, 0.0, 0.0
+    win_rate = (bt_df['pnl'] > 0).mean() * 100
+    tot_pnl = bt_df['pnl'].sum()
+    gross_win = bt_df.loc[bt_df['pnl'] > 0, 'pnl'].sum()
+    gross_loss = abs(bt_df.loc[bt_df['pnl'] < 0, 'pnl'].sum())
+    pf = (gross_win / gross_loss) if gross_loss > 0 else (99.9 if gross_win > 0 else 0.0)
+    cum_curve = (1 + bt_df['pnl'] / 100).cumprod()
+    peak = cum_curve.cummax()
+    mdd = ((cum_curve - peak) / peak * 100).min()
+    return win_rate, tot_pnl, pf, mdd
 st.markdown("#### ⚡ Global Quant Pro")
 
 with st.expander("⚙️ 종목 · 분봉 · 전략 설정", expanded=True):
     c1, c2 = st.columns((1.2, 1.8))
-    sym = c1.text_input("티커 (예: NVDA, 005930.KS)", value="NVDA").upper().strip()
+    sym = c1.text_input("메인 분석 티커", value="NVDA").upper().strip()
     tf = c2.radio("타임프레임", ("15분봉", "30분봉", "1시간봉"), index=0, horizontal=True)
+
+    watchlist_raw = st.text_input("📋 워치리스트 (쉼표 구분)", value="NVDA, TSLA, AAPL, QQQ, 005930.KS")
 
     s_filter = st.selectbox("전략 필터", (
         "🏆 전체 복합 전략 (강력신호 우선)",
@@ -204,90 +219,141 @@ with st.expander("⚙️ 종목 · 분봉 · 전략 설정", expanded=True):
 
     kakao_token = st.text_input("카카오톡 Access Token (선택)", type="password")
 
-df = load_quant_data(sym, tf, s_filter, trend_on)
-if df is None:
-    st.error("데이터를 불러올 수 없습니다. 티커명(한국 주식은 .KS 또는 .KQ 포함)을 확인해 주세요.")
-    st.stop()
+tab1, tab2 = st.tabs(("📊 메인 종목 정밀 분석", "🔍 워치리스트 일괄 스캔"))
 
-is_krx = sym.endswith((".KS", ".KQ"))
-cur_fmt = "{:,.0f}원" if is_krx else "${:,.2f}"
+with tab1:
+    df = load_quant_data(sym, tf, s_filter, trend_on)
+    if df is None:
+        st.error("데이터를 불러올 수 없습니다. 티커명(한국 주식은 .KS 또는 .KQ 포함)을 확인해 주세요.")
+        st.stop()
 
-if auto_opt and nb_opts and tp_opts and sl_opts:
-    best_wr, best_cfg = -1.0, (n_bars, tp_m, sl_m)
-    for nb in nb_opts:
-        for tm in tp_opts:
-            for sm in sl_opts:
-                tmp = run_bt(df, nb, tm, sm)
-                if len(tmp) >= 5:
-                    wr = (tmp['pnl'] > 0).mean() * 100
-                    if wr > best_wr:
-                        best_wr, best_cfg = wr, (nb, tm, sm)
-    n_bars, tp_m, sl_m = best_cfg
-    if best_wr >= 0:
-        st.markdown(f"<div class='opt-box'>🎯 <b>{tf} 자동 최적화 완료:</b> 보유 {n_bars}봉 | 익절 {tp_m} ATR | 손절 {sl_m} ATR (최고 승률 {best_wr:.1f}%)</div>", unsafe_allow_html=True)
+    is_krx = sym.endswith((".KS", ".KQ"))
+    cur_fmt = "{:,.0f}원" if is_krx else "${:,.2f}"
+
+    if auto_opt and nb_opts and tp_opts and sl_opts:
+        best_wr, best_cfg = -1.0, (n_bars, tp_m, sl_m)
+        for nb in nb_opts:
+            for tm in tp_opts:
+                for sm in sl_opts:
+                    tmp = run_bt(df, nb, tm, sm)
+                    if len(tmp) >= 5:
+                        wr = (tmp['pnl'] > 0).mean() * 100
+                        if wr > best_wr:
+                            best_wr, best_cfg = wr, (nb, tm, sm)
+        n_bars, tp_m, sl_m = best_cfg
+        if best_wr >= 0:
+            st.markdown(f"<div class='opt-box'>🎯 <b>{tf} 자동 최적화 완료:</b> 보유 {n_bars}봉 | 익절 {tp_m} ATR | 손절 {sl_m} ATR (최고 승률 {best_wr:.1f}%)</div>", unsafe_allow_html=True)
+        else:
+            st.warning("유효 표본(5건 이상)이 부족해 기본 설정값을 유지합니다.")
+
+    bt = run_bt(df, n_bars, tp_m, sl_m)
+    last = df.iloc[-1]
+    win_rate, tot_pnl, pf, mdd = calc_bt_metrics(bt)
+
+    st.markdown(f"""
+    <div class='kpi-grid'>
+      <div class='metric-card'><div class='metric-title'>{sym} 현재가 ({tf})</div><div class='metric-value'>{cur_fmt.format(last['Close'])}</div></div>
+      <div class='metric-card'><div class='metric-title'>백테스트 승률 ({len(bt)}건)</div><div class='metric-value'>{win_rate:.1f}% <span style='font-size:.75rem;color:#94A3B8'>(누적 {tot_pnl:+.1f}%)</span></div></div>
+      <div class='metric-card'><div class='metric-title'>손익비 (Profit Factor)</div><div class='metric-value' style='color:{"#10B981" if pf >= 1.5 else "#F8FAFC"}'>{pf:.2f}</div></div>
+      <div class='metric-card'><div class='metric-title'>최대 낙폭 (MDD)</div><div class='metric-value' style='color:#EF4444'>{mdd:.2f}%</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    tp_val = last['Close'] + tp_m * last['ATR']
+    sl_val = last['Close'] - sl_m * last['ATR']
+    st.markdown(f"""
+    <div class='tpsl-bar'>
+      <div><div class='ohlc-lbl'>기준 진입가</div><div class='ohlc-val'>{cur_fmt.format(last['Close'])}</div></div>
+      <div><div class='ohlc-lbl'>목표 익절가 (+{tp_m} ATR)</div><div class='ohlc-val' style='color:#10B981'>{cur_fmt.format(tp_val)}</div></div>
+      <div><div class='ohlc-lbl'>기준 손절가 (-{sl_m} ATR)</div><div class='ohlc-val' style='color:#EF4444'>{cur_fmt.format(sl_val)}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    plot_df = df.tail(100)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=(0.75, 0.25), vertical_spacing=0.03)
+    fig.add_trace(go.Candlestick(x=plot_df.index, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'], name="Price"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['EMA20'], line=dict(color='#38BDF8', width=1.2), name="EMA20"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['VWAP'], line=dict(color='#F59E0B', width=1.2, dash='dot'), name="VWAP"), row=1, col=1)
+
+    buys = plot_df.loc[plot_df['Buy_Signal']]
+    sells = plot_df.loc[plot_df['Sell_Signal']]
+    fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.996, mode='markers', marker=dict(symbol='triangle-up', size=11, color='#10B981'), name="매수신호"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.004, mode='markers', marker=dict(symbol='triangle-down', size=11, color='#EF4444'), name="매도신호"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['RSI'], line=dict(color='#A855F7', width=1.2), name="RSI"), row=2, col=1)
+    fig.update_layout(height=420, margin=dict(l=5, r=5, t=10, b=10), paper_bgcolor='#0B0E14', plot_bgcolor='#131722', font=dict(color='#E2E8F0'), xaxis_rangeslider_visible=False, showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("##### 📌 최근 발생 시그널 내역")
+    if bt.empty:
+        st.info("선택한 조건에서 발생한 최근 시그널이 없습니다.")
     else:
-        st.warning("유효 표본(5건 이상)이 부족해 기본 설정값을 유지합니다.")
+        recent = bt.iloc[::-1].head(10)
+        for _, row in recent.iterrows():
+            badge = "<span class='badge-buy'>BUY</span>" if row['side'] == "BUY" else "<span class='badge-sell'>SELL</span>"
+            p_color = "#10B981" if row['pnl'] > 0 else "#EF4444"
+            t_str = row['time'].tz_convert('Asia/Seoul').strftime('%m/%d %H:%M KST')
+            st.markdown(f"""
+            <div class='list-card'>
+              <div class='list-top'>
+                <div class='list-left'>{badge}<div class='strat-txt'>{row['reason']}</div></div>
+                <div class='price-txt'>{cur_fmt.format(row['entry'])}</div>
+              </div>
+              <div class='list-sub'>
+                <span>{t_str}</span>
+                <span>결과: {row['res']} (<b style='color:{p_color}'>{row['pnl']:+.2f}%</b>)</span>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-bt = run_bt(df, n_bars, tp_m, sl_m)
-last = df.iloc[-1]
-win_rate = (bt['pnl'] > 0).mean() * 100 if not bt.empty else 0.0
-tot_pnl = bt['pnl'].sum() if not bt.empty else 0.0
+        if st.button("📲 최신 시그널 카카오톡 전송"):
+            latest_sig = recent.head(1).squeeze()
+            msg = f"[{sym} {tf} 시그널]\n유형: {latest_sig['side']}\n전략: {latest_sig['reason']}\n진입가: {cur_fmt.format(latest_sig['entry'])}"
+            ok, info = send_kakao(kakao_token, msg)
+            st.success(info) if ok else st.warning(info)
 
-st.markdown(f"""
-<div class='kpi-grid'>
-  <div class='metric-card'><div class='metric-title'>{sym} 현재가 ({tf})</div><div class='metric-value'>{cur_fmt.format(last['Close'])}</div></div>
-  <div class='metric-card'><div class='metric-title'>백테스트 승률 ({len(bt)}건)</div><div class='metric-value'>{win_rate:.1f}% <span style='font-size:.75rem;color:#94A3B8'>(누적 {tot_pnl:+.1f}%)</span></div></div>
-</div>
-""", unsafe_allow_html=True)
+with tab2:
+    st.markdown(f"##### 🔍 워치리스트 일괄 스캔 ({tf} 기준)")
+    tickers = tuple(t.strip().upper() for t in watchlist_raw.split(",") if t.strip())
+    if not tickers:
+        st.warning("워치리스트에 최소 1개 이상의 티커를 입력해 주세요.")
+    else:
+        scan_msgs = list()
+        for tk in tickers:
+            w_df = load_quant_data(tk, tf, s_filter, trend_on)
+            if w_df is None:
+                continue
+            w_bt = run_bt(w_df, n_bars, tp_m, sl_m)
+            w_wr, w_pnl, w_pf, _ = calc_bt_metrics(w_bt)
+            w_last = w_df.iloc[-1]
+            w_fmt = "{:,.0f}원" if tk.endswith((".KS", ".KQ")) else "${:,.2f}"
 
-tp_val = last['Close'] + tp_m * last['ATR']
-sl_val = last['Close'] - sl_m * last['ATR']
-st.markdown(f"""
-<div class='tpsl-bar'>
-  <div><div class='ohlc-lbl'>기준 진입가</div><div class='ohlc-val'>{cur_fmt.format(last['Close'])}</div></div>
-  <div><div class='ohlc-lbl'>목표 익절가 (+{tp_m} ATR)</div><div class='ohlc-val' style='color:#10B981'>{cur_fmt.format(tp_val)}</div></div>
-  <div><div class='ohlc-lbl'>기준 손절가 (-{sl_m} ATR)</div><div class='ohlc-val' style='color:#EF4444'>{cur_fmt.format(sl_val)}</div></div>
-</div>
-""", unsafe_allow_html=True)
+            # 최근 3봉 이내 시그널 확인
+            recent_bars = w_df.tail(3)
+            sig_rows = recent_bars.loc[recent_bars['Buy_Signal'] | recent_bars['Sell_Signal']]
+            if not sig_rows.empty:
+                last_sig = sig_rows.iloc[-1]
+                is_b = bool(last_sig['Buy_Signal'])
+                badge = "<span class='badge-buy'>BUY</span>" if is_b else "<span class='badge-sell'>SELL</span>"
+                rsn_txt = f"{last_sig['Signal_Reason']} ({last_sig.name.tz_convert('Asia/Seoul').strftime('%H:%M KST')})"
+                scan_msgs.append(f"• {tk}: {'매수' if is_b else '매도'} - {last_sig['Signal_Reason']}")
+            else:
+                badge = "<span class='badge-neutral'>관망</span>"
+                rsn_txt = f"최근 3봉 시그널 없음 (RSI {w_last['RSI']:.1f})"
 
-plot_df = df.tail(100)
-fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=(0.75, 0.25), vertical_spacing=0.03)
-fig.add_trace(go.Candlestick(x=plot_df.index, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'], name="Price"), row=1, col=1)
-fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['EMA20'], line=dict(color='#38BDF8', width=1.2), name="EMA20"), row=1, col=1)
-fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['VWAP'], line=dict(color='#F59E0B', width=1.2, dash='dot'), name="VWAP"), row=1, col=1)
+            st.markdown(f"""
+            <div class='list-card'>
+              <div class='list-top'>
+                <div class='list-left'>{badge}<div class='strat-txt'><b>{tk}</b> · {rsn_txt}</div></div>
+                <div class='price-txt'>{w_fmt.format(w_last['Close'])}</div>
+              </div>
+              <div class='list-sub'>
+                <span>승률: <b>{w_wr:.1f}%</b> ({len(w_bt)}건)</span>
+                <span>PF: <b>{w_pf:.2f}</b> | 누적: <b>{w_pnl:+.1f}%</b></span>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-buys = plot_df.loc[plot_df['Buy_Signal']]
-sells = plot_df.loc[plot_df['Sell_Signal']]
-fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.996, mode='markers', marker=dict(symbol='triangle-up', size=11, color='#10B981'), name="매수신호"), row=1, col=1)
-fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.004, mode='markers', marker=dict(symbol='triangle-down', size=11, color='#EF4444'), name="매도신호"), row=1, col=1)
-fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['RSI'], line=dict(color='#A855F7', width=1.2), name="RSI"), row=2, col=1)
-fig.update_layout(height=420, margin=dict(l=5, r=5, t=10, b=10), paper_bgcolor='#0B0E14', plot_bgcolor='#131722', font=dict(color='#E2E8F0'), xaxis_rangeslider_visible=False, showlegend=False)
-st.plotly_chart(fig, use_container_width=True)
-
-st.markdown("##### 📌 최근 발생 시그널 내역")
-if bt.empty:
-    st.info("선택한 조건에서 발생한 최근 시그널이 없습니다.")
-else:
-    recent = bt.iloc[::-1].head(10)
-    for _, row in recent.iterrows():
-        badge = "<span class='badge-buy'>BUY</span>" if row['side'] == "BUY" else "<span class='badge-sell'>SELL</span>"
-        p_color = "#10B981" if row['pnl'] > 0 else "#EF4444"
-        t_str = row['time'].tz_convert('Asia/Seoul').strftime('%m/%d %H:%M KST')
-        st.markdown(f"""
-        <div class='list-card'>
-          <div class='list-top'>
-            <div class='list-left'>{badge}<div class='strat-txt'>{row['reason']}</div></div>
-            <div class='price-txt'>{cur_fmt.format(row['entry'])}</div>
-          </div>
-          <div class='list-sub'>
-            <span>{t_str}</span>
-            <span>결과: {row['res']} (<b style='color:{p_color}'>{row['pnl']:+.2f}%</b>)</span>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    if st.button("📲 최신 시그널 카카오톡 전송"):
-        latest_sig = recent.head(1).squeeze()
-        msg = f"[{sym} {tf} 시그널]\n유형: {latest_sig['side']}\n전략: {latest_sig['reason']}\n진입가: {cur_fmt.format(latest_sig['entry'])}"
-        ok, info = send_kakao(kakao_token, msg)
-        st.success(info) if ok else st.warning(info)
+        if scan_msgs and st.button("📲 워치리스트 포착 시그널 일괄 카톡 전송"):
+            full_msg = f"[워치리스트 {tf} 스캔 요약]\n" + "\n".join(scan_msgs)
+            ok, info = send_kakao(kakao_token, full_msg)
+            st.success(info) if ok else st.warning(info)
