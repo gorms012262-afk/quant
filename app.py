@@ -326,7 +326,10 @@ with tab1:
         if st.button("📲 최신 시그널 카카오톡 전송"):
             ls = recent.head(1).squeeze()
             ok, info = send_kakao(kakao_token, f"[{sym} {tf} 시그널]\n{ls['reason']}\n진입: {cur_fmt.format(ls['entry'])} ({ls['res']} {ls['pnl']:+.2f}%)")
-            st.success(info) if ok else st.warning(info)
+            if ok:
+                st.success(info)
+            else:
+                st.warning(info)
 
 with tab2:
     st.markdown(f"##### 🔍 워치리스트 일괄 스캔 ({tf})")
