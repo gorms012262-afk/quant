@@ -83,7 +83,6 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
     df['VWAP'] = df.groupby('Date_Loc')['TP_Vol'].cumsum() / df.groupby('Date_Loc')['Volume'].cumsum().replace(0, np.nan)
     df['Vol_MA20'] = df['Volume'].rolling(20).mean()
     df['Buy_Signal'], df['Sell_Signal'], df['Signal_Reason'] = False, False, ""
-
     fb = df.groupby('Date_Loc').first()
     orb_h, orb_l = fb['High'].to_dict(), fb['Low'].to_dict()
 
@@ -255,9 +254,7 @@ with st.expander("⚙️ 종목 · 분봉 · 전략 설정", expanded=True):
     c1, c2 = st.columns((1.2, 1.8))
     sym = c1.text_input("메인 분석 티커", value="NVDA").upper().strip()
     tf = c2.radio("타임프레임", ("15분봉", "30분봉", "1시간봉"), index=0, horizontal=True)
-
     watchlist_raw = st.text_input("📋 워치리스트 (쉼표 구분)", value="NVDA, TSLA, AAPL, QQQ, 005930.KS")
-
     s_filter = st.selectbox("강력신호 포함 전략 필터", (
         "🏆 전체 강력신호 (2개 이상 전략 중첩)",
         "1. VWAP+RSI 포함 강력신호",
@@ -269,7 +266,6 @@ with st.expander("⚙️ 종목 · 분봉 · 전략 설정", expanded=True):
     c3, c4 = st.columns(2)
     trend_on = c3.checkbox("EMA200 + ADX 추세필터", value=True)
     auto_opt = c4.checkbox("승률 최적화 자동 탐색", value=True)
-
     c5, c6 = st.columns(2)
     long_only = c5.checkbox("현물 전용 (★강력매수만 보기)", value=False)
     no_overlap = c6.checkbox("포지션 중 중복신호 차단", value=True)
@@ -281,7 +277,6 @@ with st.expander("⚙️ 종목 · 분봉 · 전략 설정", expanded=True):
     sl_m = b3.number_input("손절(ATR배수)", 0.5, 3.0, 1.0, 0.5)
 
     if auto_opt:
-        st.caption("🔧 자동 탐색 후보군 커스터마이징")
         o1, o2, o3 = st.columns(3)
         default_nb = (8, 12, 16, 24) if tf == "15분봉" else (6, 8, 12, 16)
         nb_opts = o1.multiselect("보유봉 후보", (6, 8, 12, 16, 20, 24), default=default_nb)
@@ -293,195 +288,3 @@ with st.expander("⚙️ 종목 · 분봉 · 전략 설정", expanded=True):
     auto_kakao = k2.checkbox("장중 익절·손절 즉시 카톡발송", value=False)
 
 tab1, tab2 = st.tabs(("📊 메인 종목 정밀 분석", "🔍 워치리스트 일괄 스캔"))
-
-with tab1:
-    df = load_quant_data(sym, tf, s_filter, trend_on, long_only)
-    if df is None:
-        st.error("데이터를 불러올 수 없습니다. 티커명(한국 주식은 .KS 또는 .KQ 포함)을 확인해 주세요.")
-        st.stop()
-
-    is_krx = sym.endswith((".KS", ".KQ"))
-    cur_fmt = "{:,.0f}원" if is_krx else "${:,.2f}"
-
-    if auto_opt and nb_opts and tp_opts and sl_opts:
-        best_wr, best_cfg = -1.0, (n_bars, tp_m, sl_m)
-        for nb in nb_opts:
-            for tm in tp_opts:
-                for sm in sl_opts:
-                    tmp = run_bt(df, nb, tm, sm, no_overlap)
-                    if len(tmp) >= 2:
-                        wr = (tmp['pnl'] > 0).mean() * 100
-                        if wr > best_wr:
-                            best_wr, best_cfg = wr, (nb, tm, sm)
-        n_bars, tp_m, sl_m = best_cfg
-        if best_wr >= 0:
-            st.markdown(f"<div class='opt-box'>🎯 <b>{tf} 강력신호 최적화 완료:</b> 보유 {n_bars}봉 | 익절 {tp_m} ATR | 손절 {sl_m} ATR (최고 승률 {best_wr:.1f}%)</div>", unsafe_allow_html=True)
-
-    live = check_live_tpsl(df, n_bars, tp_m, sl_m)
-    if live is not None:
-        sig_t = live['time'].tz_convert('Asia/Seoul').strftime('%m/%d %H:%M KST')
-        alert_key = f"{sym}_{tf}_{sig_t}_{live['status']}"
-        if live['status'] == "TP":
-            st.markdown(f"""
-            <div class='alert-tp'>
-              🎉 <b>[봉 마감 전 장중 익절가 도달!] {sym} ({live['side']})</b><br>
-              진입가 {cur_fmt.format(live['entry'])} → 목표 익절가 <b>{cur_fmt.format(live['tp'])}</b> 돌파 완료! (현재가 {cur_fmt.format(live['cur_p'])}, <b>{live['cur_pnl']:+.2f}%</b>)
-            </div>
-            """, unsafe_allow_html=True)
-            if auto_kakao and kakao_token and alert_key not in st.session_state["sent_alerts"]:
-                ok, _ = send_kakao(kakao_token, f"🎉 [{sym} {tf} 장중 익절 도달!]\n포지션: {live['side']}\n진입: {cur_fmt.format(live['entry'])} → 목표가: {cur_fmt.format(live['tp'])}\n현재수익: {live['cur_pnl']:+.2f}%")
-                if ok: st.session_state["sent_alerts"].add(alert_key)
-
-        elif live['status'] == "SL":
-            st.markdown(f"""
-            <div class='alert-sl'>
-              🚨 <b>[봉 마감 전 장중 손절가 이탈!] {sym} ({live['side']})</b><br>
-              진입가 {cur_fmt.format(live['entry'])} → 기준 손절가 <b>{cur_fmt.format(live['sl'])}</b> 터치! (현재가 {cur_fmt.format(live['cur_p'])}, <b>{live['cur_pnl']:+.2f}%</b>)
-            </div>
-            """, unsafe_allow_html=True)
-            if auto_kakao and kakao_token and alert_key not in st.session_state["sent_alerts"]:
-                ok, _ = send_kakao(kakao_token, f"🚨 [{sym} {tf} 장중 손절 이탈!]\n포지션: {live['side']}\n진입: {cur_fmt.format(live['entry'])} → 손절가: {cur_fmt.format(live['sl'])}\n현재손익: {live['cur_pnl']:+.2f}%")
-                if ok: st.session_state["sent_alerts"].add(alert_key)
-
-        else:
-            st.markdown(f"""
-            <div class='alert-run'>
-              ⏳ <b>[진행 중 포지션 실시간 감시] {sym} ({live['side']} · {live['elapsed']}/{live['n_bars']}봉 경과)</b><br>
-              진입 {cur_fmt.format(live['entry'])} | 현재 {cur_fmt.format(live['cur_p'])} (<b>{live['cur_pnl']:+.2f}%</b>) · 목표익절 {cur_fmt.format(live['tp'])} / 손절 {cur_fmt.format(live['sl'])}
-            </div>
-            """, unsafe_allow_html=True)
-
-    bt = run_bt(df, n_bars, tp_m, sl_m, no_overlap)
-    last = df.iloc[-1]
-    win_rate, tot_pnl, pf, mdd = calc_bt_metrics(bt)
-
-    st.markdown(f"""
-    <div class='kpi-grid'>
-      <div class='metric-card'><div class='metric-title'>{sym} 현재가 ({tf})</div><div class='metric-value'>{cur_fmt.format(last['Close'])}</div></div>
-      <div class='metric-card'><div class='metric-title'>강력신호 승률 ({len(bt)}건)</div><div class='metric-value'>{win_rate:.1f}% <span style='font-size:.75rem;color:#94A3B8'>(누적 {tot_pnl:+.1f}%)</span></div></div>
-      <div class='metric-card'><div class='metric-title'>손익비 (Profit Factor)</div><div class='metric-value' style='color:{"#10B981" if pf >= 1.5 else "#F8FAFC"}'>{pf:.2f}</div></div>
-      <div class='metric-card'><div class='metric-title'>최대 낙폭 (MDD)</div><div class='metric-value' style='color:#EF4444'>{mdd:.2f}%</div></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    tp_val = last['Close'] + tp_m * last['ATR']
-    sl_val = last['Close'] - sl_m * last['ATR']
-    st.markdown(f"""
-    <div class='tpsl-bar'>
-      <div><div class='ohlc-lbl'>신규 진입 기준가</div><div class='ohlc-val'>{cur_fmt.format(last['Close'])}</div></div>
-      <div><div class='ohlc-lbl'>신규 익절가 (+{tp_m} ATR)</div><div class='ohlc-val' style='color:#10B981'>{cur_fmt.format(tp_val)}</div></div>
-      <div><div class='ohlc-lbl'>신규 손절가 (-{sl_m} ATR)</div><div class='ohlc-val' style='color:#EF4444'>{cur_fmt.format(sl_val)}</div></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    plot_df = df.tail(100)
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=(0.75, 0.25), vertical_spacing=0.03)
-    fig.add_trace(go.Candlestick(x=plot_df.index, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'], name="Price"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['EMA20'], line=dict(color='#38BDF8', width=1.2), name="EMA20"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['VWAP'], line=dict(color='#F59E0B', width=1.2, dash='dot'), name="VWAP"), row=1, col=1)
-
-    if live is not None:
-        fig.add_hline(y=live['tp'], line_dash="dash", line_color="#10B981", annotation_text="진행포지션 익절선", row=1, col=1)
-        fig.add_hline(y=live['sl'], line_dash="dash", line_color="#EF4444", annotation_text="진행포지션 손절선", row=1, col=1)
-        if live['status'] in ("TP", "SL"):
-            m_txt = "🎯장중익절" if live['status'] == "TP" else "🚨장중손절"
-            m_col = "#10B981" if live['status'] == "TP" else "#EF4444"
-            m_y = live['tp'] if live['status'] == "TP" else live['sl']
-            fig.add_trace(go.Scatter(
-                x=(plot_df.index[-1],), y=(m_y,), mode='markers+text',
-                text=(m_txt,), textposition="top center", textfont=dict(color=m_col, size=11),
-                marker=dict(symbol='star', size=14, color=m_col), name=m_txt
-            ), row=1, col=1)
-
-    buys = plot_df.loc[plot_df['Buy_Signal']]
-    sells = plot_df.loc[plot_df['Sell_Signal']]
-    fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.996, mode='markers', marker=dict(symbol='triangle-up', size=12, color='#10B981'), name="강력매수"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.004, mode='markers', marker=dict(symbol='triangle-down', size=12, color='#EF4444'), name="강력매도"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['RSI'], line=dict(color='#A855F7', width=1.2), name="RSI"), row=2, col=1)
-    fig.update_layout(height=420, margin=dict(l=5, r=5, t=10, b=10), paper_bgcolor='#0B0E14', plot_bgcolor='#131722', font=dict(color='#E2E8F0'), xaxis_rangeslider_visible=False, showlegend=False)
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("##### 📌 최근 발생 강력시그널 내역")
-    if bt.empty:
-        st.info("선택한 조건에서 발생한 최근 강력시그널(★)이 없습니다.")
-    else:
-        recent = bt.iloc[::-1].head(10)
-        for _, row in recent.iterrows():
-            badge = "<span class='badge-buy'>BUY</span>" if row['side'] == "BUY" else "<span class='badge-sell'>SELL</span>"
-            res_str = row['res']
-            if "장중익절" in res_str:
-                res_badge = "<span class='badge-buy'>🎯장중익절</span>"
-            elif "장중손절" in res_str:
-                res_badge = "<span class='badge-sell'>🚨장중손절</span>"
-            elif res_str == "진행중":
-                res_badge = "<span class='badge-neutral'>⏳진행중</span>"
-            else:
-                res_badge = f"<span>{res_str}</span>"
-
-            p_color = "#10B981" if row['pnl'] > 0 else "#EF4444"
-            t_str = row['time'].tz_convert('Asia/Seoul').strftime('%m/%d %H:%M KST')
-            st.markdown(f"""
-            <div class='list-card'>
-{badge}{row['reason']}
-{cur_fmt.format(row['entry'])}
-
-
-{t_str} · TP {cur_fmt.format(row['tp'])} / SL {cur_fmt.format(row['sl'])}
-{res_badge} ({row['pnl']:+.2f}%)
-
-
-""", unsafe_allow_html=True)
-if st.button("📲 최신 강력시그널 카카오톡 전송"):
-latest_sig = recent.head(1).squeeze()
-msg = f"[{sym} {tf} 강력시그널]\n유형: {latest_sig['side']}\n전략: {latest_sig['reason']}\n진입가: {cur_fmt.format(latest_sig['entry'])}\n상태: {latest_sig['res']} ({latest_sig['pnl']:+.2f}%)"
-ok, info = send_kakao(kakao_token, msg)
-st.success(info) if ok else st.warning(info)
-with tab2:
-st.markdown(f"##### 🔍 워치리스트 실시간 경보 & 스캔 ({tf})")
-tickers = tuple(t.strip().upper() for t in watchlist_raw.split(",") if t.strip())
-if not tickers:
-st.warning("워치리스트에 최소 1개 이상의 티커를 입력해 주세요.")
-else:
-scan_msgs = list()
-for tk in tickers:
-w_df = load_quant_data(tk, tf, s_filter, trend_on, long_only)
-if w_df is None:
-continue
-w_bt = run_bt(w_df, n_bars, tp_m, sl_m, no_overlap)
-w_wr, w_pnl, w_pf, _ = calc_bt_metrics(w_bt)
-w_last = w_df.iloc[-1]
-w_fmt = "{:,.0f}원" if tk.endswith((".KS", ".KQ")) else "${:,.2f}"
-w_live = check_live_tpsl(w_df, n_bars, tp_m, sl_m)
-if w_live and w_live['status'] in ("TP", "SL"):
-is_tp = (w_live['status'] == "TP")
-badge = "🎯장중익절" if is_tp else "🚨장중손절"
-rsn_txt = f"{'목표가 도달' if is_tp else '손절가 이탈'} ({w_live['cur_pnl']:+.2f}%) · {w_live['reason']}"
-scan_msgs.append(f"• {tk}: {'장중익절 도달' if is_tp else '장중손절 이탈'} ({w_live['cur_pnl']:+.2f}%)")
-else:
-recent_bars = w_df.tail(3)
-sig_rows = recent_bars.loc[recent_bars['Buy_Signal'] | recent_bars['Sell_Signal']]
-if not sig_rows.empty:
-last_sig = sig_rows.iloc[-1]
-is_b = bool(last_sig['Buy_Signal'])
-badge = "BUY" if is_b else "SELL"
-rsn_txt = f"{last_sig['Signal_Reason']} ({last_sig.name.tz_convert('Asia/Seoul').strftime('%H:%M KST')})"
-scan_msgs.append(f"• {tk}: {last_sig['Signal_Reason']}")
-else:
-badge = "관망"
-rsn_txt = f"최근 3봉 강력시그널 없음 (RSI {w_last['RSI']:.1f})"
-st.markdown(f"""
-
-
-{badge}{tk} · {rsn_txt}
-{w_fmt.format(w_last['Close'])}
-
-
-승률: {w_wr:.1f}% ({len(w_bt)}건)
-PF: {w_pf:.2f} | 누적: {w_pnl:+.1f}%
-
-
-""", unsafe_allow_html=True)
-if scan_msgs and st.button("📲 워치리스트 경보·시그널 일괄 카톡 전송"):
-full_msg = f"[워치리스트 {tf} 실시간 요약]\n" + "\n".join(scan_msgs)
-ok, info = send_kakao(kakao_token, full_msg)
-st.success(info) if ok else st.warning(info
