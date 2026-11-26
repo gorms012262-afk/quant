@@ -1,3 +1,4 @@
+import io
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -8,16 +9,29 @@ import matplotlib.patches as patches
 st.set_page_config(page_title="US Stock Quant Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""<style>
-.stApp { background-color: #0B0E14; color: #E2E8F0; }
-.block-container { padding-top: 1rem !important; padding-bottom: 1.5rem !important; padding-left: 0.8rem !important; padding-right: 0.8rem !important; }
-header[data-testid="stHeader"] { background-color: #0B0E14 !important; }
-.kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; margin-bottom: 12px; }
+html, body, [data-testid="stAppViewContainer"], .stApp {
+    background-color: #0B0E14 !important;
+    color: #E2E8F0 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    height: auto !important;
+}
+header[data-testid="stHeader"] {
+    background-color: #0B0E14 !important;
+}
+.block-container {
+    padding-top: 3.5rem !important;
+    padding-bottom: 4rem !important;
+    padding-left: 0.9rem !important;
+    padding-right: 0.9rem !important;
+}
+.kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px; margin-bottom: 14px; }
 .metric-card { background-color: #131722; border: 1px solid #1E293B; border-radius: 10px; padding: 12px; }
 .metric-title { font-size: 0.78rem; color: #94A3B8; margin-bottom: 4px; }
-.metric-value { font-size: 1.25rem; font-weight: 700; color: #F8FAFC; }
-.badge-buy { background-color: rgba(16,185,129,0.15); color: #10B981; border: 1px solid #10B981; padding: 3px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; display: inline-block; }
-.badge-sell { background-color: rgba(239,68,68,0.15); color: #EF4444; border: 1px solid #EF4444; padding: 3px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; display: inline-block; }
-.badge-neutral { background-color: rgba(148,163,184,0.15); color: #94A3B8; border: 1px solid #475569; padding: 3px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; display: inline-block; }
+.metric-value { font-size: 1.2rem; font-weight: 700; color: #F8FAFC; }
+.badge-buy { background-color: rgba(16,185,129,0.15); color: #10B981; border: 1px solid #10B981; padding: 3px 8px; border-radius: 6px; font-size: 0.78rem; font-weight: 600; display: inline-block; }
+.badge-sell { background-color: rgba(239,68,68,0.15); color: #EF4444; border: 1px solid #EF4444; padding: 3px 8px; border-radius: 6px; font-size: 0.78rem; font-weight: 600; display: inline-block; }
+.badge-neutral { background-color: rgba(148,163,184,0.15); color: #94A3B8; border: 1px solid #475569; padding: 3px 8px; border-radius: 6px; font-size: 0.78rem; font-weight: 600; display: inline-block; }
 div[data-testid="stVerticalBlockBorderWrapper"] { background-color: #131722 !important; border: 1px solid #1E293B !important; border-radius: 10px !important; padding: 12px !important; }
 div[data-baseweb="input"] > div, div[data-baseweb="select"] > div { background-color: #F8FAFC !important; color: #0B0E14 !important; border-radius: 8px !important; }
 div[data-baseweb="input"] input { color: #0B0E14 !important; font-weight: 600 !important; }
@@ -159,7 +173,7 @@ st.markdown(f"""
 <div class="kpi-grid">
     <div class="metric-card">
         <div class="metric-title">{ticker} ({timeframe})</div>
-        <div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.82rem;color:{color_p};">({sign}{price_pct:.2f}%)</span></div>
+        <div class="metric-value">${latest["Close"]:,.2f} <span style="font-size:0.8rem;color:{color_p};">({sign}{price_pct:.2f}%)</span></div>
     </div>
     <div class="metric-card">
         <div class="metric-title">현재 추세 판정</div>
@@ -167,7 +181,7 @@ st.markdown(f"""
     </div>
     <div class="metric-card">
         <div class="metric-title">최근 매수 ({last_buy_str})</div>
-        <div class="metric-value" style="font-size:0.95rem;color:#10B981;">{last_buy_reason}</div>
+        <div class="metric-value" style="font-size:0.9rem;color:#10B981;">{last_buy_reason}</div>
     </div>
     <div class="metric-card">
         <div class="metric-title">RSI(14) / 매도({last_sell_str})</div>
@@ -176,14 +190,9 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown(f"**📊 {ticker} 실시간 차트 ({timeframe})**")
+st.markdown(f"#### 📊 {ticker} 실시간 차트 ({timeframe})")
 
 plot_df = df.tail(55).copy()
 plot_idx = plot_df.index
 plot_df = plot_df.reset_index(drop=True)
 
-fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(7, 7.2), gridspec_kw={'height_ratios': [3.2, 1, 1]}, sharex=True)
-fig.patch.set_facecolor('#131722')
-
-for ax in (ax1, ax2, ax3):
-    ax.set_facecolor('#0B0E14')
