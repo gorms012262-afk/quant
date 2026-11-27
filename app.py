@@ -290,7 +290,7 @@ with tab1:
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=(0.75, 0.25), vertical_spacing=0.03)
     
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Close'], mode='lines', line=dict(color='#FFFFFF', width=2)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['EMA20'], line=dict(color='#38BDF8', width=1.2)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Close'], mode='lines', line=dict(color='#FFFFFF', width=2), name="가격"), row=1, col=1)
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['VWAP'], line=dict(color='#F59E0B', width=1.2, dash='dot')), row=1, col=1)
     buys, sells = plot_df.loc[plot_df['Buy_Signal']], plot_df.loc[plot_df['Sell_Signal']]
     fig.add_trace(go.Scatter(x=buys.index, y=buys['Close']*0.995, mode='markers', marker=dict(symbol='triangle-up', size=8, color='#10B981')), row=1, col=1)
