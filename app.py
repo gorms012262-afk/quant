@@ -131,10 +131,13 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
             if not (r['Close'] < r['EMA100'] and r['ADX'] >= 15.0 and r['RSI'] > 30.0):
                 rs = list()
 
-        is_strong_only = s_filter.startswith("🔥")
+             is_strong_only = s_filter.startswith("🔥")
         min_cnt = 2 if is_strong_only else 1
         allow_all = s_filter.startswith("🏆") or is_strong_only
-        key = s_filter.split(".").pop().split(" ").pop(0)
+        key = s_filter.split(".")[-1].strip().split(" ")[0].replace("선", "")
+        if not allow_all:
+            rb = [x for x in rb if key in x]
+            rs = [x for x in rs if key in x]
 
         if len(rb) >= min_cnt and (allow_all or any(key in x for x in rb)):
             tag = "★강력매수: " if len(rb) >= 2 else ""
