@@ -119,7 +119,8 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
                 rs.append("볼린저 상단 이탈")
             if r['Time_Loc'] > open_time and r['Close'] < ol and pv['Close'] >= ol and r['Volume'] > r['Vol_MA20']*1.3:
                 rs.append("ORB 하단 이탈")
-
+            if r['Close'] < r['EMA400'] and r['EMA100'] < r['EMA400'] and (r['High'] >= r['EMA100']*0.992 or r['High'] >= r['EMA400']*0.992) and r['Close'] < r['Open']: rs.append("100-400 저항하락")
+            if r['EMA100'] < r['EMA400'] and pv['EMA100'] >= pv['EMA400'] and r['Close'] < r['Open']: rs.append("100-400 데드크로스")
         if trend_on:
             if not (r['Close'] > r['EMA100'] and r['ADX'] >= 15.0 and r['RSI'] < 70.0):
                 rb = list()
