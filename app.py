@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import requests, json
+import requests, json, time
 
 st.set_page_config(page_title="Global Quant Pro", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""<style>
