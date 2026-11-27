@@ -56,6 +56,7 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
     open_time = "09:00" if is_krx else "09:30"
 
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    df['EMA400'] = df['Close'].ewm(span=400, adjust=False).mean()
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
     df['EMA100'] = df['Close'].ewm(span=100, adjust=False).mean()
     d = df['Close'].diff()
