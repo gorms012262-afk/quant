@@ -104,6 +104,8 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
         oh, ol = orb_h.get(r['Date_Loc'], np.nan), orb_l.get(r['Date_Loc'], np.nan)
         if r['Time_Loc'] > open_time and r['Close'] > oh and pv['Close'] <= oh and r['Volume'] > r['Vol_MA20']*1.3:
             rb.append("ORB 돌파")
+        if r['Close'] < r['EMA400'] and r['EMA100'] < r['EMA400'] and (r['High'] >= r['EMA100']*0.992 or r['High'] >= r['EMA400']*0.992) and r['Close'] < r['Open']: rs.append("100-400 저항하락")
+        if r['EMA100'] < r['EMA400'] and pv['EMA100'] >= pv['EMA400'] and r['Close'] < r['Open']: rs.append("100-400 데드크로스")
         if r['Close'] > r['EMA400'] and r['EMA100'] > r['EMA400'] and (r['Low'] <= r['EMA100']*1.008 or r['Low'] <= r['EMA400']*1.008) and r['Close'] > r['Open']: rb.append("100-400 지지반등")
         if r['EMA100'] > r['EMA400'] and pv['EMA100'] <= pv['EMA400'] and r['Close'] > r['Open']: rb.append("100-400 골든크로스")
         if r['Close'] > r['EMA400'] and r['EMA100'] > r['EMA400'] and (r['Low'] <= r['EMA100']*1.008 or r['Low'] <= r['EMA400']*1.008) and r['Close'] > r['Open']: rb.append("100-400 지지반등")
