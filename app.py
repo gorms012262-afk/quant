@@ -292,14 +292,13 @@ with tab1:
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['EMA20'], line=dict(color='#38BDF8', width=1.2)), row=1, col=1)
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['VWAP'], line=dict(color='#F59E0B', width=1.2, dash='dot')), row=1, col=1)
     buys, sells = plot_df.loc[plot_df['Buy_Signal']], plot_df.loc[plot_df['Sell_Signal']]
-    fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.996, mode='markers', marker=dict(symbol='triangle-up', size=12, color='#10B981')), row=1, col=1)
-    fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.004, mode='markers', marker=dict(symbol='triangle-down', size=12, color='#EF4444')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=buys.index, y=buys['Close']*0.995, mode='markers', marker=dict(symbol='triangle-up', size=8, color='#10B981')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=sells.index, y=sells['Close']*1.005, mode='markers', marker=dict(symbol='triangle-down', size=8, color='#EF4444')), row=1, col=1)
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['RSI'], line=dict(color='#A855F7', width=1.2)), row=2, col=1)
     fig.update_layout(height=400, margin=dict(l=5, r=5, t=10, b=10), paper_bgcolor='#0B0E14', plot_bgcolor='#131722', font=dict(color='#E2E8F0'), xaxis_rangeslider_visible=False, showlegend=False)
     fig.update_xaxes(type="category", nticks=6)
     fig.update_yaxes(range=[0, 100], row=2, col=1)
     fig.update_layout(dragmode=False)
-    fig.update_xaxes(type="category")
     st.plotly_chart(fig, use_container_width=True)
     st.markdown("##### 📌 최근 발생 시그널 내역")
     if bt.empty:
