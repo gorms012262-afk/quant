@@ -360,3 +360,7 @@ with tab2:
             <span>누적수익: <b>{w_pnl:+.1f}%</b></span>
           </div>
         </div>""", unsafe_allow_html=True)
+        import time
+if st.checkbox("⏱ 실시간 자동 갱신 (15초)", value=True):
+    time.sleep(15)
+    st.rerun()
