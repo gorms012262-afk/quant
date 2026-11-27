@@ -39,7 +39,7 @@ def send_discord(webhook_url, msg):
         return (True, "디스코드 전송 완료!") if r.status_code in (200, 204) else (False, f"전송 실패 ({r.status_code}): {r.text}")
     except Exception as e:
         return False, str(e)
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=10)
 def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
     tf_map = {"15분봉": ("1mo", "15m"), "30분봉": ("1mo", "30m"), "1시간봉": ("3mo", "1h")}
     p, iv = tf_map.get(tf, ("1mo", "15m"))
