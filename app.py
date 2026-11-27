@@ -43,7 +43,7 @@ def send_discord(webhook_url, msg):
 def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
     tf_map = {"15분봉": ("1mo", "15m"), "30분봉": ("1mo", "30m"), "1시간봉": ("3mo", "1h")}
     p, iv = tf_map.get(tf, ("1mo", "15m"))
-    raw = yf.download(sym,prepost=True period=p, interval=iv, progress=False, auto_adjust=True)
+    raw = yf.download(sym, prepost=True, period=p, interval=iv, progress=False, auto_adjust=True)
     if raw is None or raw.empty: return None
     if isinstance(raw.columns, pd.MultiIndex): raw.columns = raw.columns.get_level_values(0)
     df = raw.dropna().copy()
