@@ -285,7 +285,6 @@ with tab1:
       <div><div class='ohlc-lbl'>신규 손절가 (-{sl_m} ATR)</div><div class='ohlc-val' style='color:#EF4444'>{cur_fmt.format(sl_val)}</div></div>
     </div>""", unsafe_allow_html=True)
 
-    plot_df = df.tail(100)
     plot_df = df.tail(100).copy()
     plot_df.index = plot_df.index.strftime('%m-%d %H:%M')
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=(0.75, 0.25), vertical_spacing=0.03)
@@ -300,7 +299,7 @@ with tab1:
     fig.update_layout(height=400, margin=dict(l=5, r=5, t=10, b=10), paper_bgcolor='#0B0E14', plot_bgcolor='#131722', font=dict(color='#E2E8F0'), xaxis_rangeslider_visible=False, showlegend=False)
     fig.update_xaxes(type="category", nticks=6)
     fig.update_yaxes(range=[0, 100], row=2, col=1)
-    fig.update_layout(dragmode=False)
+    fig.update_layout(dragmode=False, hovermode="x unified")
     st.plotly_chart(fig, use_container_width=True)
     st.markdown("##### 📌 최근 발생 시그널 내역")
     if bt.empty:
