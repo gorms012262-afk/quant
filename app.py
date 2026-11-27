@@ -286,6 +286,8 @@ with tab1:
     </div>""", unsafe_allow_html=True)
 
     plot_df = df.tail(100)
+    plot_df = df.tail(100).copy()
+    plot_df.index = plot_df.index.strftime('%m-%d %H:%M')
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=(0.75, 0.25), vertical_spacing=0.03)
     
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Close'], mode='lines', line=dict(color='#FFFFFF', width=2)), row=1, col=1)
