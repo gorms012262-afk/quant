@@ -76,6 +76,13 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
     df['TP_Vol'] = ((df['High'] + df['Low'] + df['Close']) / 3) * df['Volume']
     df['VWAP'] = df.groupby('Date_Loc')['TP_Vol'].cumsum() / df.groupby('Date_Loc')['Volume'].cumsum().replace(0, np.nan)
     df['Vol_MA20'] = df['Volume'].rolling(20).mean()
+        df['Tenkan'] = (df['High'].rolling(9).max() + df['Low'].rolling(9).min()) / 2
+    df['Kijun'] = (df['High'].rolling(26).max() + df['Low'].rolling(26).min()) / 2
+    df['SpanA'] = ((df['Tenkan'] + df['Kijun']) / 2).shift(26)
+    df['SpanB'] = ((df['High'].rolling(52).max() + df['Low'].rolling(52).min()) / 2).shift(26)
+    l14, h14 = df['Low'].rolling(14).min(), df['High'].rolling(14).max()
+    df['Stoch_K'] = (100 * (df['Close'] - l14) / (h14 - l14).replace(0, np.nan)).rolling(3).mean()
+    df['Stoch_D'] = df['Stoch_K'].rolling(3).mean()
     df['Buy_Signal'], df['Sell_Signal'], df['Signal_Reason'] = False, False, ""
     fb = df[df['Time_Loc'] >= open_time].groupby('Date_Loc').first()
     orb_h, orb_l = fb['High'].to_dict(), fb['Low'].to_dict()
