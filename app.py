@@ -106,6 +106,8 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
             rb.append("ORB 돌파")
         if r['Close'] > r['EMA400'] and r['EMA100'] > r['EMA400'] and (r['Low'] <= r['EMA100']*1.008 or r['Low'] <= r['EMA400']*1.008) and r['Close'] > r['Open']: rb.append("100-400 지지반등")
         if r['EMA100'] > r['EMA400'] and pv['EMA100'] <= pv['EMA400'] and r['Close'] > r['Open']: rb.append("100-400 골든크로스")
+        if r['Close'] > r['EMA400'] and r['EMA100'] > r['EMA400'] and (r['Low'] <= r['EMA100']*1.008 or r['Low'] <= r['EMA400']*1.008) and r['Close'] > r['Open']: rb.append("100-400 지지반등")
+        if r['EMA100'] > r['EMA400'] and pv['EMA100'] <= pv['EMA400'] and r['Close'] > r['Open']: rb.append("100-400 골든크로스")
 
         v_guard = (r['Close'] > r['VWAP']) and (r['EMA20'] > pv['EMA20'])
         if not long_only and not v_guard:
