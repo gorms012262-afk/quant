@@ -305,8 +305,8 @@ with tab1:
     if bt.empty:
         st.info("선택한 조건에서 발생한 시그널이 없습니다. 추세필터 체크를 잠시 해제해 보세요.")
     else:
-        tz_str = 'Asia/Seoul' if is_krx else 'America/New_York'
-        tz_lbl = 'KST' if is_krx else 'NY'
+        tz_str = 'Asia/Seoul'
+        tz_lbl = 'KST'
         recent = bt.iloc[::-1].head(15)
         for _, row in recent.iterrows():
             badge = "<span class='badge-buy'>🟢 매수</span>" if row['side'] == "BUY" else "<span class='badge-sell'>🔴 매도</span>"
