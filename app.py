@@ -41,7 +41,6 @@ def send_discord(webhook_url, msg):
         return False, str(e)
 @st.cache_data(ttl=10)
 def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
-    tf
     tf_map = {"15분봉": ("3mo", "15m"), "30분봉": ("3mo", "30m"), "1시간봉": ("3mo", "1h")}  "30분봉": ("1mo", "30m"), "1시간봉": ("3mo", "1h")}
     p, iv = tf_map.get(tf, ("1mo", "15m"))
     raw = yf.download(sym, prepost=True, period=p, interval=iv, progress=False, auto_adjust=True)
