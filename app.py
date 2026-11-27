@@ -39,9 +39,9 @@ def send_discord(webhook_url, msg):
         return (True, "디스코드 전송 완료!") if r.status_code in (200, 204) else (False, f"전송 실패 ({r.status_code}): {r.text}")
     except Exception as e:
         return False, str(e)
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=15)
 def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
-    tf_map = {"15분봉": ("60d", "15m"), "30분봉": ("60d", "30m"), "1시간봉": ("3mo", "1h")}
+    tf_map = {"15분봉": ("1mo", "15m"), "30분봉": ("1mo", "30m"), "1시간봉": ("3mo", "1h")}
     p, iv = tf_map.get(tf, ("1mo", "15m"))
     raw = yf.download(sym, prepost=True, period=p, interval=iv, progress=False, auto_adjust=True)
     if raw is None or raw.empty: return None
@@ -56,7 +56,6 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
     open_time = "09:00" if is_krx else "09:30"
 
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
-    df['EMA400'] = df['Close'].ewm(span=400, adjust=False).mean()
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
     df['EMA100'] = df['Close'].ewm(span=100, adjust=False).mean()
     d = df['Close'].diff()
@@ -77,13 +76,6 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
     df['TP_Vol'] = ((df['High'] + df['Low'] + df['Close']) / 3) * df['Volume']
     df['VWAP'] = df.groupby('Date_Loc')['TP_Vol'].cumsum() / df.groupby('Date_Loc')['Volume'].cumsum().replace(0, np.nan)
     df['Vol_MA20'] = df['Volume'].rolling(20).mean()
-    df['Tenkan'] = (df['High'].rolling(9).max() + df['Low'].rolling(9).min()) / 2
-    df['Kijun'] = (df['High'].rolling(26).max() + df['Low'].rolling(26).min()) / 2
-    df['SpanA'] = ((df['Tenkan'] + df['Kijun']) / 2).shift(26)
-    df['SpanB'] = ((df['High'].rolling(52).max() + df['Low'].rolling(52).min()) / 2).shift(26)
-    l14, h14 = df['Low'].rolling(14).min(), df['High'].rolling(14).max()
-    df['Stoch_K'] = (100 * (df['Close'] - l14) / (h14 - l14).replace(0, np.nan)).rolling(3).mean()
-    df['Stoch_D'] = df['Stoch_K'].rolling(3).mean()
     df['Buy_Signal'], df['Sell_Signal'], df['Signal_Reason'] = False, False, ""
     fb = df[df['Time_Loc'] >= open_time].groupby('Date_Loc').first()
     orb_h, orb_l = fb['High'].to_dict(), fb['Low'].to_dict()
@@ -104,12 +96,6 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
         oh, ol = orb_h.get(r['Date_Loc'], np.nan), orb_l.get(r['Date_Loc'], np.nan)
         if r['Time_Loc'] > open_time and r['Close'] > oh and pv['Close'] <= oh and r['Volume'] > r['Vol_MA20']*1.3:
             rb.append("ORB 돌파")
-        if r['Close'] < r['EMA400'] and r['EMA100'] < r['EMA400'] and (r['High'] >= r['EMA100']*0.992 or r['High'] >= r['EMA400']*0.992) and r['Close'] < r['Open']: rs.append("100-400 저항하락")
-        if r['EMA100'] < r['EMA400'] and pv['EMA100'] >= pv['EMA400'] and r['Close'] < r['Open']: rs.append("100-400 데드크로스")
-        if r['Close'] > r['EMA400'] and r['EMA100'] > r['EMA400'] and (r['Low'] <= r['EMA100']*1.008 or r['Low'] <= r['EMA400']*1.008) and r['Close'] > r['Open']: rb.append("100-400 지지반등")
-        if r['EMA100'] > r['EMA400'] and pv['EMA100'] <= pv['EMA400'] and r['Close'] > r['Open']: rb.append("100-400 골든크로스")
-        if r['Close'] > r['EMA400'] and r['EMA100'] > r['EMA400'] and (r['Low'] <= r['EMA100']*1.008 or r['Low'] <= r['EMA400']*1.008) and r['Close'] > r['Open']: rb.append("100-400 지지반등")
-        if r['EMA100'] > r['EMA400'] and pv['EMA100'] <= pv['EMA400'] and r['Close'] > r['Open']: rb.append("100-400 골든크로스")
 
         v_guard = (r['Close'] > r['VWAP']) and (r['EMA20'] > pv['EMA20'])
         if not long_only and not v_guard:
@@ -123,8 +109,7 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
                 rs.append("볼린저 상단 이탈")
             if r['Time_Loc'] > open_time and r['Close'] < ol and pv['Close'] >= ol and r['Volume'] > r['Vol_MA20']*1.3:
                 rs.append("ORB 하단 이탈")
-            if r['Close'] < r['EMA400'] and r['EMA100'] < r['EMA400'] and (r['High'] >= r['EMA100']*0.992 or r['High'] >= r['EMA400']*0.992) and r['Close'] < r['Open']: rs.append("100-400 저항하락")
-            if r['EMA100'] < r['EMA400'] and pv['EMA100'] >= pv['EMA400'] and r['Close'] < r['Open']: rs.append("100-400 데드크로스")
+
         if trend_on:
             if not (r['Close'] > r['EMA100'] and r['ADX'] >= 15.0 and r['RSI'] < 70.0):
                 rb = list()
@@ -134,10 +119,7 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
         is_strong_only = s_filter.startswith("🔥")
         min_cnt = 2 if is_strong_only else 1
         allow_all = s_filter.startswith("🏆") or is_strong_only
-        key = s_filter.split(".")[-1].strip().split(" ")[0].replace("선", "")
-        if not allow_all:
-            rb = [x for x in rb if key in x]
-            rs = [x for x in rs if key in x]
+        key = s_filter.split(".").pop().split(" ").pop(0)
 
         if len(rb) >= min_cnt and (allow_all or any(key in x for x in rb)):
             tag = "★강력매수: " if len(rb) >= 2 else ""
@@ -211,7 +193,7 @@ with st.expander("⚙️ 종목 · 분봉 · 레버리지 단타 설정", expand
     sym = c1.text_input("티커 (예: TQQQ, SOXL, NVDA)", value="TQQQ").upper().strip()
     tf = c2.radio("타임프레임", ("15분봉", "30분봉", "1시간봉"), index=0, horizontal=True)
     watchlist_raw = st.text_input("📋 워치리스트 (쉼표 구분)", value="TQQQ, SOXL, NVDL, TSLL, NVDA, QQQ")
-    s_filter = st.selectbox("시그널 필터", ("🏆 전체 시그널 (일반+강력)", "🔥 강력신호만 (★)", "1. VWAP+RSI", "2. EMA", "3. MACD+VWAP", "4. 볼린저", "5. ORB", "6. 100-400선 추세매매" ))
+    s_filter = st.selectbox("시그널 필터", ("🏆 전체 시그널 (일반+강력)", "🔥 강력신호만 (★)", "1. VWAP+RSI", "2. EMA", "3. MACD+VWAP", "4. 볼린저", "5. ORB"))
 
     c3, c4 = st.columns(2)
     trend_on = c3.checkbox("EMA100 + ADX 추세필터", value=True)
@@ -312,8 +294,8 @@ with tab1:
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['VWAP'], line=dict(color='#F59E0B', width=1.2, dash='dot'), name="VWAP"), row=1, col=1)
     buys, sells = plot_df.loc[plot_df['Buy_Signal']], plot_df.loc[plot_df['Sell_Signal']]
     fig.add_trace(go.Scatter(x=buys.index, y=buys['Close']*0.995, mode='markers', marker=dict(symbol='triangle-up', size=8, color='#10B981'), name="매수신호"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=sells.index, y=sells['Close']*1.005, mode='markers', marker=dict(symbol='triangle-down', size=8, color='#EF4444'), name="매도신호"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['RSI'], line=dict(color='#A855F7', width=1.2), name="RSI"), row=2, col=1)
+    fig.add_trace(go.Scatter(x=sells.index, y=sells['Close']*1.005, mode='markers', marker=dict(symbol='triangle-down', size=8, color='#EF4444')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['RSI'], line=dict(color='#A855F7', width=1.2)), row=2, col=1), name="이름"
     fig.update_layout(height=400, margin=dict(l=5, r=5, t=10, b=10), paper_bgcolor='#0B0E14', plot_bgcolor='#131722', font=dict(color='#E2E8F0'), xaxis_rangeslider_visible=False, showlegend=False)
     fig.update_xaxes(type="category", nticks=6)
     fig.update_yaxes(range=[0, 100], row=2, col=1)
