@@ -294,7 +294,7 @@ with tab1:
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['VWAP'], line=dict(color='#F59E0B', width=1.2, dash='dot'), name="VWAP"), row=1, col=1)
     buys, sells = plot_df.loc[plot_df['Buy_Signal']], plot_df.loc[plot_df['Sell_Signal']]
     fig.add_trace(go.Scatter(x=buys.index, y=buys['Close']*0.995, mode='markers', marker=dict(symbol='triangle-up', size=8, color='#10B981'), name="매수신호"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=sells.index, y=sells['Close']*1.005, mode='markers', marker=dict(symbol='triangle-down', size=8, color='#EF4444')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=sells.index, y=sells['Close']*1.005, mode='markers', marker=dict(symbol='triangle-down', size=8, color='#EF4444'), name="매도신호"), row=1, col=1)
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['RSI'], line=dict(color='#A855F7', width=1.2)), row=2, col=1), name="이름"
     fig.update_layout(height=400, margin=dict(l=5, r=5, t=10, b=10), paper_bgcolor='#0B0E14', plot_bgcolor='#131722', font=dict(color='#E2E8F0'), xaxis_rangeslider_visible=False, showlegend=False)
     fig.update_xaxes(type="category", nticks=6)
