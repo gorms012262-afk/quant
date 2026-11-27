@@ -77,7 +77,7 @@ def load_quant_data(sym, tf, s_filter, trend_on, long_only=False):
     df['VWAP'] = df.groupby('Date_Loc')['TP_Vol'].cumsum() / df.groupby('Date_Loc')['Volume'].cumsum().replace(0, np.nan)
     df['Vol_MA20'] = df['Volume'].rolling(20).mean()
     df['Buy_Signal'], df['Sell_Signal'], df['Signal_Reason'] = False, False, ""
-    fb = df.groupby('Date_Loc').first()
+    fb = df[df['Time_Loc'] >= open_time].groupby('Date_Loc').first()
     orb_h, orb_l = fb['High'].to_dict(), fb['Low'].to_dict()
     is_15m = (tf == "15분봉")
 
