@@ -204,7 +204,7 @@ with st.expander("⚙️ 종목 · 분봉 · 레버리지 단타 설정", expand
     sym = c1.text_input("티커 (예: TQQQ, SOXL, NVDA)", value="TQQQ").upper().strip()
     tf = c2.radio("타임프레임", ("15분봉", "30분봉", "1시간봉"), index=0, horizontal=True)
     watchlist_raw = st.text_input("📋 워치리스트 (쉼표 구분)", value="TQQQ, SOXL, NVDL, TSLL, NVDA, QQQ")
-    s_filter = st.selectbox("시그널 필터", ("🏆 전체 시그널 (일반+강력)", "🔥 강력신호만 (★)", "1. VWAP+RSI", "2. EMA", "3. MACD+VWAP", "4. 볼린저", "5. ORB"))
+    s_filter = st.selectbox("시그널 필터", ("🏆 전체 시그널 (일반+강력)", "🔥 강력신호만 (★)", "1. VWAP+RSI", "2. EMA", "3. MACD+VWAP", "4. 볼린저", "5. ORB", "6. 100-400선 추세매매" ))
 
     c3, c4 = st.columns(2)
     trend_on = c3.checkbox("EMA100 + ADX 추세필터", value=True)
